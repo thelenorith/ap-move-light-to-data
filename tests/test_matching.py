@@ -159,6 +159,119 @@ class TestFindMatchingBias:
         assert "/path/bias1.fits" in result
 
 
+class TestCollectCalibrationFrames:
+    """Tests for collect_calibration_frames function."""
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_collects_from_lights_directory(self, mock_get_frames, tmp_path):
+        """Verify calibration frames collected from lights directory."""
+        source_dir = tmp_path / "source"
+        lights_dir = source_dir / "filter_blue"
+        lights_dir.mkdir(parents=True)
+
+        mock_get_frames.return_value = {
+            "lights": {},
+            "darks": {"/path/dark1.fits": {}},
+            "flats": {"/path/flat1.fits": {}},
+            "bias": {},
+        }
+
+        result = matching.collect_calibration_frames(str(lights_dir), str(source_dir))
+
+        assert len(result["darks"]) == 1
+        assert len(result["flats"]) == 1
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_collects_from_parent_directory(self, mock_get_frames, tmp_path):
+        """Verify calibration frames collected from parent directory."""
+        source_dir = tmp_path / "source"
+        date_dir = source_dir / "M31" / "date_xxx"
+        lights_dir = date_dir / "filter_blue"
+        lights_dir.mkdir(parents=True)
+
+        def get_frames_side_effect(directory, debug=False):
+            if "date_xxx" in directory and "filter_blue" not in directory:
+                # Parent has calibration frames
+                return {
+                    "lights": {},
+                    "darks": {"/path/dark1.fits": {}},
+                    "flats": {"/path/flat1.fits": {}},
+                    "bias": {},
+                }
+            return {"lights": {}, "darks": {}, "flats": {}, "bias": {}}
+
+        mock_get_frames.side_effect = get_frames_side_effect
+
+        result = matching.collect_calibration_frames(str(lights_dir), str(source_dir))
+
+        assert len(result["darks"]) == 1
+        assert len(result["flats"]) == 1
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_merges_from_multiple_directories(self, mock_get_frames, tmp_path):
+        """Verify calibration frames merged from lights dir and parent."""
+        source_dir = tmp_path / "source"
+        date_dir = source_dir / "M31" / "date_xxx"
+        lights_dir = date_dir / "filter_blue"
+        lights_dir.mkdir(parents=True)
+
+        def get_frames_side_effect(directory, debug=False):
+            if "filter_blue" in directory:
+                # Lights directory has flats only
+                return {
+                    "lights": {},
+                    "darks": {},
+                    "flats": {"/path/flat1.fits": {}},
+                    "bias": {},
+                }
+            elif "date_xxx" in directory:
+                # Parent has darks only
+                return {
+                    "lights": {},
+                    "darks": {"/path/dark1.fits": {}},
+                    "flats": {},
+                    "bias": {},
+                }
+            return {"lights": {}, "darks": {}, "flats": {}, "bias": {}}
+
+        mock_get_frames.side_effect = get_frames_side_effect
+
+        result = matching.collect_calibration_frames(str(lights_dir), str(source_dir))
+
+        assert len(result["darks"]) == 1
+        assert len(result["flats"]) == 1
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_stops_at_source_directory(self, mock_get_frames, tmp_path):
+        """Verify search stops before reaching source directory."""
+        source_dir = tmp_path / "source"
+        m31_dir = source_dir / "M31"
+        date_dir = m31_dir / "date_xxx"
+        lights_dir = date_dir / "filter_blue"
+        lights_dir.mkdir(parents=True)
+
+        # No calibration frames anywhere
+        mock_get_frames.return_value = {
+            "lights": {},
+            "darks": {},
+            "flats": {},
+            "bias": {},
+        }
+
+        result = matching.collect_calibration_frames(str(lights_dir), str(source_dir))
+
+        # Should return empty dicts when nothing found
+        assert len(result["darks"]) == 0
+        assert len(result["flats"]) == 0
+        # Verify we checked up to M31 but not source directory
+        calls = [str(call[0][0]) for call in mock_get_frames.call_args_list]
+        assert any("filter_blue" in call for call in calls)
+        assert any("date_xxx" in call for call in calls)
+        assert any(str(m31_dir) in call for call in calls)
+        # Should NOT check source directory itself
+        assert not any(str(source_dir) == call for call in calls)
+
+
 class TestCheckCalibrationStatus:
     """Tests for check_calibration_status function."""
 
@@ -166,7 +279,7 @@ class TestCheckCalibrationStatus:
     def test_complete_when_all_calibration_present(self, mock_get_frames):
         """Verify is_complete True when darks and flats exist with matching exposure."""
         mock_get_frames.return_value = {
-            config.TYPE_LIGHT: {
+            "lights": {
                 "/path/light1.fits": {
                     config.KEYWORD_TYPE: "light",
                     config.KEYWORD_CAMERA: "ASI2600MM",
@@ -174,24 +287,24 @@ class TestCheckCalibrationStatus:
                     config.KEYWORD_FILTER: "Ha",
                 }
             },
-            config.TYPE_DARK: {
+            "darks": {
                 "/path/dark1.fits": {
                     config.KEYWORD_TYPE: "dark",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_EXPOSURESECONDS: "300",
                 }
             },
-            config.TYPE_FLAT: {
+            "flats": {
                 "/path/flat1.fits": {
                     config.KEYWORD_TYPE: "flat",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_FILTER: "Ha",
                 }
             },
-            config.TYPE_BIAS: {},
+            "bias": {},
         }
 
-        result = matching.check_calibration_status("/test/dir")
+        result = matching.check_calibration_status("/test/dir", "/source")
 
         assert result["is_complete"] is True
         assert result["has_lights"] is True
@@ -203,23 +316,23 @@ class TestCheckCalibrationStatus:
     def test_incomplete_when_no_darks(self, mock_get_frames):
         """Verify is_complete False when no darks exist."""
         mock_get_frames.return_value = {
-            config.TYPE_LIGHT: {
+            "lights": {
                 "/path/light1.fits": {
                     config.KEYWORD_TYPE: "light",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                 }
             },
-            config.TYPE_DARK: {},
-            config.TYPE_FLAT: {
+            "darks": {},
+            "flats": {
                 "/path/flat1.fits": {
                     config.KEYWORD_TYPE: "flat",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                 }
             },
-            config.TYPE_BIAS: {},
+            "bias": {},
         }
 
-        result = matching.check_calibration_status("/test/dir")
+        result = matching.check_calibration_status("/test/dir", "/source")
 
         assert result["is_complete"] is False
         assert result["reason"] == "No matching dark frames"
@@ -228,25 +341,25 @@ class TestCheckCalibrationStatus:
     def test_incomplete_when_no_flats(self, mock_get_frames):
         """Verify is_complete False when no flats exist."""
         mock_get_frames.return_value = {
-            config.TYPE_LIGHT: {
+            "lights": {
                 "/path/light1.fits": {
                     config.KEYWORD_TYPE: "light",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_EXPOSURESECONDS: "300",
                 }
             },
-            config.TYPE_DARK: {
+            "darks": {
                 "/path/dark1.fits": {
                     config.KEYWORD_TYPE: "dark",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_EXPOSURESECONDS: "300",
                 }
             },
-            config.TYPE_FLAT: {},
-            config.TYPE_BIAS: {},
+            "flats": {},
+            "bias": {},
         }
 
-        result = matching.check_calibration_status("/test/dir")
+        result = matching.check_calibration_status("/test/dir", "/source")
 
         assert result["is_complete"] is False
         assert result["reason"] == "No matching flat frames"
@@ -255,7 +368,7 @@ class TestCheckCalibrationStatus:
     def test_needs_bias_when_exposure_mismatch(self, mock_get_frames):
         """Verify needs_bias True when dark exposure differs from light."""
         mock_get_frames.return_value = {
-            config.TYPE_LIGHT: {
+            "lights": {
                 "/path/light1.fits": {
                     config.KEYWORD_TYPE: "light",
                     config.KEYWORD_CAMERA: "ASI2600MM",
@@ -263,21 +376,21 @@ class TestCheckCalibrationStatus:
                     config.KEYWORD_FILTER: "Ha",
                 }
             },
-            config.TYPE_DARK: {
+            "darks": {
                 "/path/dark1.fits": {
                     config.KEYWORD_TYPE: "dark",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_EXPOSURESECONDS: "120",  # Different exposure
                 }
             },
-            config.TYPE_FLAT: {
+            "flats": {
                 "/path/flat1.fits": {
                     config.KEYWORD_TYPE: "flat",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_FILTER: "Ha",
                 }
             },
-            config.TYPE_BIAS: {
+            "bias": {
                 "/path/bias1.fits": {
                     config.KEYWORD_TYPE: "bias",
                     config.KEYWORD_CAMERA: "ASI2600MM",
@@ -285,7 +398,7 @@ class TestCheckCalibrationStatus:
             },
         }
 
-        result = matching.check_calibration_status("/test/dir")
+        result = matching.check_calibration_status("/test/dir", "/source")
 
         assert result["is_complete"] is True
         assert result["needs_bias"] is True
@@ -295,7 +408,7 @@ class TestCheckCalibrationStatus:
     def test_incomplete_when_needs_bias_but_none(self, mock_get_frames):
         """Verify is_complete False when bias needed but not present."""
         mock_get_frames.return_value = {
-            config.TYPE_LIGHT: {
+            "lights": {
                 "/path/light1.fits": {
                     config.KEYWORD_TYPE: "light",
                     config.KEYWORD_CAMERA: "ASI2600MM",
@@ -303,24 +416,24 @@ class TestCheckCalibrationStatus:
                     config.KEYWORD_FILTER: "Ha",
                 }
             },
-            config.TYPE_DARK: {
+            "darks": {
                 "/path/dark1.fits": {
                     config.KEYWORD_TYPE: "dark",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_EXPOSURESECONDS: "120",  # Different exposure
                 }
             },
-            config.TYPE_FLAT: {
+            "flats": {
                 "/path/flat1.fits": {
                     config.KEYWORD_TYPE: "flat",
                     config.KEYWORD_CAMERA: "ASI2600MM",
                     config.KEYWORD_FILTER: "Ha",
                 }
             },
-            config.TYPE_BIAS: {},  # No bias
+            "bias": {},  # No bias
         }
 
-        result = matching.check_calibration_status("/test/dir")
+        result = matching.check_calibration_status("/test/dir", "/source")
 
         assert result["is_complete"] is False
         assert result["needs_bias"] is True
@@ -330,14 +443,210 @@ class TestCheckCalibrationStatus:
     def test_no_lights_found(self, mock_get_frames):
         """Verify proper handling when no light frames found."""
         mock_get_frames.return_value = {
-            config.TYPE_LIGHT: {},
-            config.TYPE_DARK: {},
-            config.TYPE_FLAT: {},
-            config.TYPE_BIAS: {},
+            "lights": {},
+            "darks": {},
+            "flats": {},
+            "bias": {},
         }
 
-        result = matching.check_calibration_status("/test/dir")
+        result = matching.check_calibration_status("/test/dir", "/source")
 
         assert result["is_complete"] is False
         assert result["has_lights"] is False
         assert result["reason"] == "No light frames found"
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_handles_master_darks(self, mock_get_frames):
+        """Verify MASTER DARK frames are recognized as darks."""
+        mock_get_frames.return_value = {
+            "lights": {
+                "/path/light1.fits": {
+                    config.KEYWORD_TYPE: "light",
+                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.KEYWORD_FILTER: "Ha",
+                }
+            },
+            "darks": {
+                "/path/master_dark.fits": {
+                    config.KEYWORD_TYPE: "master dark",
+                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.KEYWORD_EXPOSURESECONDS: "300",
+                }
+            },
+            "flats": {
+                "/path/master_flat.fits": {
+                    config.KEYWORD_TYPE: "master flat",
+                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.KEYWORD_FILTER: "Ha",
+                }
+            },
+            "bias": {},
+        }
+
+        result = matching.check_calibration_status("/test/dir", "/source")
+
+        assert result["is_complete"] is True
+        assert result["has_darks"] is True
+        assert result["has_flats"] is True
+        assert result["dark_count"] == 1
+        assert result["flat_count"] == 1
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_finds_calibration_in_parent_directory(self, mock_get_frames, tmp_path):
+        """Verify calibration frames can be found in parent directory."""
+        source_dir = tmp_path / "source"
+        target_dir = source_dir / "target"
+        accept_dir = target_dir / "accept"
+        date_dir = accept_dir / "date_xxx"
+        lights_dir = date_dir / "filter_blue"
+        lights_dir.mkdir(parents=True)
+
+        def get_frames_side_effect(directory, debug=False):
+            if "filter_blue" in directory:
+                # Lights directory has only lights
+                return {
+                    "lights": {
+                        "/path/light1.fits": {
+                            config.KEYWORD_TYPE: "light",
+                            config.KEYWORD_CAMERA: "ASI2600MM",
+                            config.KEYWORD_EXPOSURESECONDS: "300",
+                            config.KEYWORD_FILTER: "Ha",
+                        }
+                    },
+                    "darks": {},
+                    "flats": {},
+                    "bias": {},
+                }
+            elif "date_xxx" in directory:
+                # Parent directory has calibration frames
+                return {
+                    "lights": {},
+                    "darks": {
+                        "/path/dark1.fits": {
+                            config.KEYWORD_TYPE: "dark",
+                            config.KEYWORD_CAMERA: "ASI2600MM",
+                            config.KEYWORD_EXPOSURESECONDS: "300",
+                        }
+                    },
+                    "flats": {
+                        "/path/flat1.fits": {
+                            config.KEYWORD_TYPE: "flat",
+                            config.KEYWORD_CAMERA: "ASI2600MM",
+                            config.KEYWORD_FILTER: "Ha",
+                        }
+                    },
+                    "bias": {},
+                }
+            return {"lights": {}, "darks": {}, "flats": {}, "bias": {}}
+
+        mock_get_frames.side_effect = get_frames_side_effect
+
+        result = matching.check_calibration_status(str(lights_dir), str(source_dir))
+
+        assert result["is_complete"] is True
+        assert result["has_lights"] is True
+        assert result["has_darks"] is True
+        assert result["has_flats"] is True
+        assert result["dark_count"] == 1
+        assert result["flat_count"] == 1
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_mixed_calibration_locations(self, mock_get_frames, tmp_path):
+        """Verify flats in lights dir and darks in parent works correctly."""
+        source_dir = tmp_path / "source"
+        target_dir = source_dir / "target"
+        accept_dir = target_dir / "accept"
+        date_dir = accept_dir / "date_xxx"
+        lights_dir = date_dir / "filter_blue"
+        lights_dir.mkdir(parents=True)
+
+        def get_frames_side_effect(directory, debug=False):
+            if "filter_blue" in directory:
+                # Lights directory has lights and filter-specific flats
+                return {
+                    "lights": {
+                        "/path/light1.fits": {
+                            config.KEYWORD_TYPE: "light",
+                            config.KEYWORD_CAMERA: "ASI2600MM",
+                            config.KEYWORD_EXPOSURESECONDS: "300",
+                            config.KEYWORD_FILTER: "Ha",
+                        }
+                    },
+                    "darks": {},  # No darks here
+                    "flats": {
+                        "/path/flat1.fits": {
+                            config.KEYWORD_TYPE: "flat",
+                            config.KEYWORD_CAMERA: "ASI2600MM",
+                            config.KEYWORD_FILTER: "Ha",
+                        }
+                    },
+                    "bias": {},
+                }
+            elif "date_xxx" in directory:
+                # Parent directory has shared darks
+                return {
+                    "lights": {},
+                    "darks": {
+                        "/path/dark1.fits": {
+                            config.KEYWORD_TYPE: "dark",
+                            config.KEYWORD_CAMERA: "ASI2600MM",
+                            config.KEYWORD_EXPOSURESECONDS: "300",
+                        }
+                    },
+                    "flats": {},
+                    "bias": {},
+                }
+            return {"lights": {}, "darks": {}, "flats": {}, "bias": {}}
+
+        mock_get_frames.side_effect = get_frames_side_effect
+
+        result = matching.check_calibration_status(str(lights_dir), str(source_dir))
+
+        # Should find both flats (from lights dir) and darks (from parent)
+        assert result["is_complete"] is True
+        assert result["has_lights"] is True
+        assert result["has_darks"] is True
+        assert result["has_flats"] is True
+        assert result["dark_count"] == 1
+        assert result["flat_count"] == 1
+
+    @patch("ap_move_lights_to_data.matching.get_frames_by_type")
+    def test_handles_mixed_normal_and_master_frames(self, mock_get_frames):
+        """Verify both normal and MASTER frames are combined."""
+        mock_get_frames.return_value = {
+            "lights": {
+                "/path/light1.fits": {
+                    config.KEYWORD_TYPE: "light",
+                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.KEYWORD_FILTER: "Ha",
+                }
+            },
+            "darks": {
+                "/path/dark1.fits": {
+                    config.KEYWORD_TYPE: "dark",
+                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.KEYWORD_EXPOSURESECONDS: "300",
+                },
+                "/path/master_dark.fits": {
+                    config.KEYWORD_TYPE: "master dark",
+                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.KEYWORD_EXPOSURESECONDS: "300",
+                },
+            },
+            "flats": {
+                "/path/flat1.fits": {
+                    config.KEYWORD_TYPE: "flat",
+                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.KEYWORD_FILTER: "Ha",
+                }
+            },
+            "bias": {},
+        }
+
+        result = matching.check_calibration_status("/test/dir", "/source")
+
+        assert result["is_complete"] is True
+        assert result["dark_count"] == 2  # Both regular and master dark
+        assert result["flat_count"] == 1

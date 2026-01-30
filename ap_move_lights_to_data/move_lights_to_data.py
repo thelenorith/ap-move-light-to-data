@@ -26,8 +26,8 @@ def find_light_directories(
     """
     Find directories containing light frames in the source directory.
 
-    Searches for directories that contain FITS/XISF files under the source.
-    Returns the leaf directories containing actual image files.
+    Uses ap-common metadata filtering to identify LIGHT frames specifically,
+    not just any image files. Returns unique directories containing lights.
 
     Args:
         source_dir: Root directory to search (e.g., 10_Blink)
@@ -37,29 +37,31 @@ def find_light_directories(
         List of directory paths containing light frames
     """
     source_path = Path(ap_common.replace_env_vars(source_dir))
-    light_dirs = set()
 
     logger.debug(f"Searching for light directories in: {source_path}")
-    if debug:
-        print(f"Searching for light directories in: {source_path}")
 
-    # Walk through the directory tree
-    for root, dirs, files in os.walk(source_path):
-        # Check if this directory contains any supported files
-        has_images = False
-        for ext in config.SUPPORTED_EXTENSIONS_RAW:
-            if any(f.lower().endswith(f".{ext}") for f in files):
-                has_images = True
-                break
+    # Use ap-common to find LIGHT frames specifically
+    light_metadata = ap_common.get_filtered_metadata(
+        dirs=[str(source_path)],
+        patterns=config.SUPPORTED_EXTENSIONS,
+        recursive=True,
+        required_properties=[config.KEYWORD_TYPE],
+        filters={config.KEYWORD_TYPE: config.TYPE_LIGHT},
+        profileFromPath=False,
+        debug=debug,
+        printStatus=debug,
+    )
 
-        if has_images:
-            light_dirs.add(root)
-            logger.debug(f"Found image directory: {root}")
+    # Extract unique directories from light frame paths
+    light_dirs = set()
+    for filepath in light_metadata.keys():
+        directory = os.path.dirname(filepath)
+        if directory not in light_dirs:
+            light_dirs.add(directory)
+            logger.debug(f"Found light frame in: {directory}")
 
     result = sorted(light_dirs)
-    logger.info(f"Found {len(result)} directories with image files")
-    if debug:
-        print(f"Found {len(result)} directories with image files")
+    logger.info(f"Found {len(result)} directories with light frames")
 
     return result
 
@@ -130,7 +132,6 @@ def move_directory(
         return True
     except Exception as e:
         logger.error(f"Error moving directory from {source_path} to {dest_path}: {e}")
-        print(f"  ERROR moving directory: {e}")
         return False
 
 
@@ -143,8 +144,9 @@ def process_light_directories(
     """
     Process light directories and move those with calibration frames.
 
-    Calibration frames (darks, flats, and bias if needed) must be in the
-    same directory as the light frames.
+    Calibration frames (darks, flats, and bias if needed) are searched for
+    in the lights directory first, then in parent directories up to (but not
+    including) the source directory.
 
     Args:
         source_dir: Source directory containing lights (e.g., 10_Blink)
@@ -174,19 +176,16 @@ def process_light_directories(
 
     if not image_dirs:
         logger.warning(f"No image directories found in {source_path}")
-        print(f"No image directories found in {source_path}")
         return results
 
     logger.info(f"Found {len(image_dirs)} directories to check")
-    print(f"Found {len(image_dirs)} directories to check")
 
     for image_dir in image_dirs:
         relative_path = get_target_from_path(image_dir, source_dir)
         logger.info(f"Processing: {relative_path}")
-        print(f"\nProcessing: {relative_path}")
 
-        # Check calibration status (frames must be in same directory)
-        status = check_calibration_status(image_dir, debug)
+        # Check calibration status
+        status = check_calibration_status(image_dir, source_dir, debug)
         logger.debug(
             f"Calibration status for {relative_path}: "
             f"lights={status['light_count']}, darks={status['dark_count']}, "
@@ -196,7 +195,6 @@ def process_light_directories(
 
         if not status["has_lights"]:
             logger.info(f"Skipping {relative_path}: No light frames found")
-            print("  SKIP: No light frames found")
             results["skipped_no_lights"] += 1
             continue
 
@@ -213,7 +211,6 @@ def process_light_directories(
         if not status["is_complete"]:
             reason = status["reason"]
             logger.info(f"Skipping {relative_path}: {reason}")
-            print(f"  SKIP: {reason}")
 
             # Track specific skip reason (check bias first since reason may contain multiple keywords)
             if "bias" in reason.lower():
@@ -237,7 +234,6 @@ def process_light_directories(
         if success:
             results["moved"] += 1
             logger.info(f"Moved {relative_path} to {dest_full}")
-            print(f"  MOVED to {dest_full}")
         else:
             results["errors"] += 1
             logger.error(f"Failed to move {relative_path}")
@@ -245,7 +241,6 @@ def process_light_directories(
     # Cleanup empty directories in source
     if not dry_run and results["moved"] > 0:
         logger.info(f"Cleaning up empty directories in {source_path}")
-        print(f"\nCleaning up empty directories in {source_path}")
         ap_common.delete_empty_directories(str(source_path), debug=debug)
 
     logger.info(
@@ -260,8 +255,8 @@ def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
         description="Move light frames to data directory when calibration frames exist. "
-        "Calibration frames (darks, flats, bias) must be in the same directory "
-        "as the light frames."
+        "Calibration frames (darks, flats, bias) are searched for in the lights "
+        "directory first, then in parent directories within the source tree."
     )
 
     parser.add_argument(
@@ -295,7 +290,7 @@ def main():
 
     print(f"Source directory: {args.source_dir}")
     print(f"Destination directory: {args.dest_dir}")
-    print("Calibration frames must be co-located with lights")
+    print("Calibration frames searched in lights directory and parent directories")
 
     if args.dry_run:
         print("\n*** DRY RUN - No files will be moved ***\n")

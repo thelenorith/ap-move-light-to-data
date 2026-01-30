@@ -13,33 +13,40 @@ from ap_move_lights_to_data import move_lights_to_data
 class TestFindLightDirectories:
     """Tests for find_light_directories function."""
 
-    def test_finds_directories_with_fits_files(self, tmp_path):
-        """Verify directories containing FITS files are found."""
-        # Create test structure
-        light_dir = tmp_path / "10_Blink" / "M31" / "DATE_2024-01-15"
-        light_dir.mkdir(parents=True)
-        (light_dir / "light_001.fits").touch()
+    @patch("ap_common.get_filtered_metadata")
+    def test_finds_directories_with_light_frames(self, mock_metadata, tmp_path):
+        """Verify directories containing LIGHT frames are found."""
+        light_dir = str(tmp_path / "10_Blink" / "M31" / "DATE_2024-01-15")
+        mock_metadata.return_value = {
+            os.path.join(light_dir, "light_001.fits"): {"type": "light"},
+            os.path.join(light_dir, "light_002.fits"): {"type": "light"},
+        }
 
         result = move_lights_to_data.find_light_directories(str(tmp_path / "10_Blink"))
 
         assert len(result) == 1
-        assert str(light_dir) in result
+        assert light_dir in result
 
-    def test_finds_directories_with_xisf_files(self, tmp_path):
-        """Verify directories containing XISF files are found."""
-        light_dir = tmp_path / "10_Blink" / "NGC7000"
-        light_dir.mkdir(parents=True)
-        (light_dir / "light_001.xisf").touch()
+    @patch("ap_common.get_filtered_metadata")
+    def test_finds_multiple_directories(self, mock_metadata, tmp_path):
+        """Verify multiple directories with light frames are found."""
+        dir1 = str(tmp_path / "10_Blink" / "M31")
+        dir2 = str(tmp_path / "10_Blink" / "NGC7000")
+        mock_metadata.return_value = {
+            os.path.join(dir1, "light_001.fits"): {"type": "light"},
+            os.path.join(dir2, "light_001.xisf"): {"type": "light"},
+        }
 
         result = move_lights_to_data.find_light_directories(str(tmp_path / "10_Blink"))
 
-        assert len(result) == 1
+        assert len(result) == 2
+        assert dir1 in result
+        assert dir2 in result
 
-    def test_returns_empty_for_no_images(self, tmp_path):
-        """Verify empty list when no image files exist."""
-        empty_dir = tmp_path / "10_Blink" / "empty"
-        empty_dir.mkdir(parents=True)
-        (empty_dir / "readme.txt").touch()
+    @patch("ap_common.get_filtered_metadata")
+    def test_returns_empty_for_no_light_frames(self, mock_metadata, tmp_path):
+        """Verify empty list when no LIGHT frames exist."""
+        mock_metadata.return_value = {}
 
         result = move_lights_to_data.find_light_directories(str(tmp_path / "10_Blink"))
 
