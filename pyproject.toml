@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ap-move-lights-to-data"
+name = "ap-move-light-to-data"
 version = "0.1.0"
 description = "Move light frames from blink to data directory when calibration frames are available"
 readme = "README.md"
@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ap-move-lights-to-data = "ap_move_lights_to_data.move_lights_to_data:main"
+ap-move-light-to-data = "ap_move_light_to_data.move_lights_to_data:main"
 
 [project.optional-dependencies]
 dev = [
@@ -36,7 +36,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ap_move_lights_to_data*"]
+include = ["ap_move_light_to_data*"]
 
 [tool.black]
 line-length = 88

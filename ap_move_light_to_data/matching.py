@@ -11,7 +11,7 @@ import ap_common
 
 from . import config
 
-logger = logging.getLogger("ap_move_lights_to_data.matching")
+logger = logging.getLogger("ap_move_light_to_data.matching")
 
 
 def get_frames_by_type(

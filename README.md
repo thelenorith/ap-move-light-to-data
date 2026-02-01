@@ -1,4 +1,4 @@
-# ap-move-lights-to-data
+# ap-move-light-to-data
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
@@ -22,13 +22,13 @@ make install-dev
 ### From Git
 
 ```bash
-pip install git+https://github.com/jewzaam/ap-move-lights-to-data.git
+pip install git+https://github.com/jewzaam/ap-move-light-to-data.git
 ```
 
 ## Usage
 
 ```bash
-python -m ap_move_lights_to_data <source_dir> <dest_dir> [options]
+python -m ap_move_light_to_data <source_dir> <dest_dir> [options]
 ```
 
 ### Arguments
@@ -45,12 +45,12 @@ python -m ap_move_lights_to_data <source_dir> <dest_dir> [options]
 
 ```bash
 # Move lights from 10_Blink to 20_Data
-python -m ap_move_lights_to_data \
+python -m ap_move_light_to_data \
     "/astrophotography/RedCat51@f4.9+ASI2600MM/10_Blink" \
     "/astrophotography/RedCat51@f4.9+ASI2600MM/20_Data"
 
 # Dry run to see what would be moved
-python -m ap_move_lights_to_data \
+python -m ap_move_light_to_data \
     "10_Blink" \
     "20_Data" \
     --dry-run

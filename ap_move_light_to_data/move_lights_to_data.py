@@ -16,7 +16,7 @@ import ap_common
 from . import config
 from .matching import check_calibration_status
 
-logger = logging.getLogger("ap_move_lights_to_data.move_lights_to_data")
+logger = logging.getLogger("ap_move_light_to_data.move_lights_to_data")
 
 
 def find_light_directories(
