@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Any, Tuple
 import ap_common
+from ap_common.constants import TYPE_LIGHT, TYPE_DARK, TYPE_FLAT, TYPE_BIAS
 
 from . import config
 
@@ -39,7 +40,7 @@ def get_frames_by_type(
         dirs=[directory],
         patterns=config.SUPPORTED_EXTENSIONS,
         recursive=False,  # explicitly set to False
-        required_properties=[config.KEYWORD_TYPE],
+        required_properties=[config.NORMALIZED_HEADER_TYPE],
         profileFromPath=True,
         printStatus=debug,
     )
@@ -51,15 +52,15 @@ def get_frames_by_type(
     bias = {}
 
     for filepath, metadata in all_metadata.items():
-        frame_type = str(metadata.get(config.KEYWORD_TYPE, "")).lower()
+        frame_type = str(metadata.get(config.NORMALIZED_HEADER_TYPE, "")).lower()
 
-        if config.TYPE_LIGHT.lower() in frame_type:
+        if TYPE_LIGHT.lower() in frame_type:
             lights[filepath] = metadata
-        elif config.TYPE_DARK.lower() in frame_type:
+        elif TYPE_DARK.lower() in frame_type:
             darks[filepath] = metadata
-        elif config.TYPE_FLAT.lower() in frame_type:
+        elif TYPE_FLAT.lower() in frame_type:
             flats[filepath] = metadata
-        elif config.TYPE_BIAS.lower() in frame_type:
+        elif TYPE_BIAS.lower() in frame_type:
             bias[filepath] = metadata
 
     logger.debug(f"Found {len(lights)} light frames")
@@ -159,7 +160,7 @@ def find_matching_darks(
     """
     matching = []
     exposure_matches = False
-    light_exposure = light_metadata.get(config.KEYWORD_EXPOSURESECONDS)
+    light_exposure = light_metadata.get(config.NORMALIZED_HEADER_EXPOSURESECONDS)
     logger.debug(f"Matching darks for light with exposure={light_exposure}s")
 
     for filepath, dark_meta in dark_frames.items():
@@ -176,7 +177,7 @@ def find_matching_darks(
         if matches:
             matching.append(filepath)
             # Check if exposure matches
-            dark_exposure = dark_meta.get(config.KEYWORD_EXPOSURESECONDS)
+            dark_exposure = dark_meta.get(config.NORMALIZED_HEADER_EXPOSURESECONDS)
             if light_exposure is not None and dark_exposure is not None:
                 try:
                     if float(light_exposure) == float(dark_exposure):

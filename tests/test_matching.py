@@ -15,30 +15,30 @@ class TestFindMatchingDarks:
     def test_matches_on_camera_settings(self):
         """Verify darks are matched on camera settings."""
         light_metadata = {
-            config.KEYWORD_CAMERA: "ASI2600MM",
-            config.KEYWORD_SETTEMP: "-10",
-            config.KEYWORD_GAIN: "100",
-            config.KEYWORD_OFFSET: "50",
-            config.KEYWORD_READOUTMODE: "0",
-            config.KEYWORD_EXPOSURESECONDS: "300",
+            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+            config.NORMALIZED_HEADER_SETTEMP: "-10",
+            config.NORMALIZED_HEADER_GAIN: "100",
+            config.NORMALIZED_HEADER_OFFSET: "50",
+            config.NORMALIZED_HEADER_READOUTMODE: "0",
+            config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
         }
 
         dark_frames = {
             "/path/dark1.fits": {
-                config.KEYWORD_CAMERA: "ASI2600MM",
-                config.KEYWORD_SETTEMP: "-10",
-                config.KEYWORD_GAIN: "100",
-                config.KEYWORD_OFFSET: "50",
-                config.KEYWORD_READOUTMODE: "0",
-                config.KEYWORD_EXPOSURESECONDS: "300",
+                config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                config.NORMALIZED_HEADER_SETTEMP: "-10",
+                config.NORMALIZED_HEADER_GAIN: "100",
+                config.NORMALIZED_HEADER_OFFSET: "50",
+                config.NORMALIZED_HEADER_READOUTMODE: "0",
+                config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
             },
             "/path/dark2.fits": {
-                config.KEYWORD_CAMERA: "ASI2600MM",
-                config.KEYWORD_SETTEMP: "-10",
-                config.KEYWORD_GAIN: "100",
-                config.KEYWORD_OFFSET: "50",
-                config.KEYWORD_READOUTMODE: "0",
-                config.KEYWORD_EXPOSURESECONDS: "120",  # Different exposure
+                config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                config.NORMALIZED_HEADER_SETTEMP: "-10",
+                config.NORMALIZED_HEADER_GAIN: "100",
+                config.NORMALIZED_HEADER_OFFSET: "50",
+                config.NORMALIZED_HEADER_READOUTMODE: "0",
+                config.NORMALIZED_HEADER_EXPOSURESECONDS: "120",  # Different exposure
             },
         }
 
@@ -53,14 +53,14 @@ class TestFindMatchingDarks:
     def test_exposure_matches_true_when_same(self):
         """Verify exposure_matches is True when dark has same exposure."""
         light_metadata = {
-            config.KEYWORD_CAMERA: "ASI2600MM",
-            config.KEYWORD_EXPOSURESECONDS: "300",
+            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+            config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
         }
 
         dark_frames = {
             "/path/dark1.fits": {
-                config.KEYWORD_CAMERA: "ASI2600MM",
-                config.KEYWORD_EXPOSURESECONDS: "300",
+                config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
             },
         }
 
@@ -71,14 +71,14 @@ class TestFindMatchingDarks:
     def test_exposure_matches_false_when_different(self):
         """Verify exposure_matches is False when dark has different exposure."""
         light_metadata = {
-            config.KEYWORD_CAMERA: "ASI2600MM",
-            config.KEYWORD_EXPOSURESECONDS: "300",
+            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+            config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
         }
 
         dark_frames = {
             "/path/dark1.fits": {
-                config.KEYWORD_CAMERA: "ASI2600MM",
-                config.KEYWORD_EXPOSURESECONDS: "120",
+                config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                config.NORMALIZED_HEADER_EXPOSURESECONDS: "120",
             },
         }
 
@@ -89,12 +89,12 @@ class TestFindMatchingDarks:
     def test_excludes_non_matching_camera(self):
         """Verify darks with different camera are excluded."""
         light_metadata = {
-            config.KEYWORD_CAMERA: "ASI2600MM",
+            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
         }
 
         dark_frames = {
             "/path/dark1.fits": {
-                config.KEYWORD_CAMERA: "ASI294MM",  # Different camera
+                config.NORMALIZED_HEADER_CAMERA: "ASI294MM",  # Different camera
             },
         }
 
@@ -109,18 +109,18 @@ class TestFindMatchingFlats:
     def test_includes_filter_in_match(self):
         """Verify flats are matched including filter."""
         light_metadata = {
-            config.KEYWORD_CAMERA: "ASI2600MM",
-            config.KEYWORD_FILTER: "Ha",
+            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+            config.NORMALIZED_HEADER_FILTER: "Ha",
         }
 
         flat_frames = {
             "/path/flat1.fits": {
-                config.KEYWORD_CAMERA: "ASI2600MM",
-                config.KEYWORD_FILTER: "Ha",
+                config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                config.NORMALIZED_HEADER_FILTER: "Ha",
             },
             "/path/flat2.fits": {
-                config.KEYWORD_CAMERA: "ASI2600MM",
-                config.KEYWORD_FILTER: "OIII",  # Different filter
+                config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                config.NORMALIZED_HEADER_FILTER: "OIII",  # Different filter
             },
         }
 
@@ -136,20 +136,20 @@ class TestFindMatchingBias:
     def test_matches_on_camera_settings(self):
         """Verify bias frames are matched on camera settings."""
         light_metadata = {
-            config.KEYWORD_CAMERA: "ASI2600MM",
-            config.KEYWORD_SETTEMP: "-10",
-            config.KEYWORD_GAIN: "100",
-            config.KEYWORD_OFFSET: "50",
-            config.KEYWORD_READOUTMODE: "0",
+            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+            config.NORMALIZED_HEADER_SETTEMP: "-10",
+            config.NORMALIZED_HEADER_GAIN: "100",
+            config.NORMALIZED_HEADER_OFFSET: "50",
+            config.NORMALIZED_HEADER_READOUTMODE: "0",
         }
 
         bias_frames = {
             "/path/bias1.fits": {
-                config.KEYWORD_CAMERA: "ASI2600MM",
-                config.KEYWORD_SETTEMP: "-10",
-                config.KEYWORD_GAIN: "100",
-                config.KEYWORD_OFFSET: "50",
-                config.KEYWORD_READOUTMODE: "0",
+                config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                config.NORMALIZED_HEADER_SETTEMP: "-10",
+                config.NORMALIZED_HEADER_GAIN: "100",
+                config.NORMALIZED_HEADER_OFFSET: "50",
+                config.NORMALIZED_HEADER_READOUTMODE: "0",
             },
         }
 
@@ -281,24 +281,24 @@ class TestCheckCalibrationStatus:
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
-                    config.KEYWORD_TYPE: "light",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "light",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "darks": {
                 "/path/dark1.fits": {
-                    config.KEYWORD_TYPE: "dark",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_TYPE: "dark",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 }
             },
             "flats": {
                 "/path/flat1.fits": {
-                    config.KEYWORD_TYPE: "flat",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "flat",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "bias": {},
@@ -318,15 +318,15 @@ class TestCheckCalibrationStatus:
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
-                    config.KEYWORD_TYPE: "light",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_TYPE: "light",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
                 }
             },
             "darks": {},
             "flats": {
                 "/path/flat1.fits": {
-                    config.KEYWORD_TYPE: "flat",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_TYPE: "flat",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
                 }
             },
             "bias": {},
@@ -343,16 +343,16 @@ class TestCheckCalibrationStatus:
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
-                    config.KEYWORD_TYPE: "light",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_TYPE: "light",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 }
             },
             "darks": {
                 "/path/dark1.fits": {
-                    config.KEYWORD_TYPE: "dark",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_TYPE: "dark",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 }
             },
             "flats": {},
@@ -370,30 +370,30 @@ class TestCheckCalibrationStatus:
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
-                    config.KEYWORD_TYPE: "light",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "light",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "darks": {
                 "/path/dark1.fits": {
-                    config.KEYWORD_TYPE: "dark",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "120",  # Different exposure
+                    config.NORMALIZED_HEADER_TYPE: "dark",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "120",  # Different exposure
                 }
             },
             "flats": {
                 "/path/flat1.fits": {
-                    config.KEYWORD_TYPE: "flat",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "flat",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "bias": {
                 "/path/bias1.fits": {
-                    config.KEYWORD_TYPE: "bias",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_TYPE: "bias",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
                 }
             },
         }
@@ -410,24 +410,24 @@ class TestCheckCalibrationStatus:
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
-                    config.KEYWORD_TYPE: "light",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "light",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "darks": {
                 "/path/dark1.fits": {
-                    config.KEYWORD_TYPE: "dark",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "120",  # Different exposure
+                    config.NORMALIZED_HEADER_TYPE: "dark",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "120",  # Different exposure
                 }
             },
             "flats": {
                 "/path/flat1.fits": {
-                    config.KEYWORD_TYPE: "flat",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "flat",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "bias": {},  # No bias
@@ -461,24 +461,24 @@ class TestCheckCalibrationStatus:
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
-                    config.KEYWORD_TYPE: "light",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "light",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "darks": {
                 "/path/master_dark.fits": {
-                    config.KEYWORD_TYPE: "master dark",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_TYPE: "master dark",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 }
             },
             "flats": {
                 "/path/master_flat.fits": {
-                    config.KEYWORD_TYPE: "master flat",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "master flat",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "bias": {},
@@ -508,10 +508,10 @@ class TestCheckCalibrationStatus:
                 return {
                     "lights": {
                         "/path/light1.fits": {
-                            config.KEYWORD_TYPE: "light",
-                            config.KEYWORD_CAMERA: "ASI2600MM",
-                            config.KEYWORD_EXPOSURESECONDS: "300",
-                            config.KEYWORD_FILTER: "Ha",
+                            config.NORMALIZED_HEADER_TYPE: "light",
+                            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                            config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                            config.NORMALIZED_HEADER_FILTER: "Ha",
                         }
                     },
                     "darks": {},
@@ -524,16 +524,16 @@ class TestCheckCalibrationStatus:
                     "lights": {},
                     "darks": {
                         "/path/dark1.fits": {
-                            config.KEYWORD_TYPE: "dark",
-                            config.KEYWORD_CAMERA: "ASI2600MM",
-                            config.KEYWORD_EXPOSURESECONDS: "300",
+                            config.NORMALIZED_HEADER_TYPE: "dark",
+                            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                            config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                         }
                     },
                     "flats": {
                         "/path/flat1.fits": {
-                            config.KEYWORD_TYPE: "flat",
-                            config.KEYWORD_CAMERA: "ASI2600MM",
-                            config.KEYWORD_FILTER: "Ha",
+                            config.NORMALIZED_HEADER_TYPE: "flat",
+                            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                            config.NORMALIZED_HEADER_FILTER: "Ha",
                         }
                     },
                     "bias": {},
@@ -567,18 +567,18 @@ class TestCheckCalibrationStatus:
                 return {
                     "lights": {
                         "/path/light1.fits": {
-                            config.KEYWORD_TYPE: "light",
-                            config.KEYWORD_CAMERA: "ASI2600MM",
-                            config.KEYWORD_EXPOSURESECONDS: "300",
-                            config.KEYWORD_FILTER: "Ha",
+                            config.NORMALIZED_HEADER_TYPE: "light",
+                            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                            config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                            config.NORMALIZED_HEADER_FILTER: "Ha",
                         }
                     },
                     "darks": {},  # No darks here
                     "flats": {
                         "/path/flat1.fits": {
-                            config.KEYWORD_TYPE: "flat",
-                            config.KEYWORD_CAMERA: "ASI2600MM",
-                            config.KEYWORD_FILTER: "Ha",
+                            config.NORMALIZED_HEADER_TYPE: "flat",
+                            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                            config.NORMALIZED_HEADER_FILTER: "Ha",
                         }
                     },
                     "bias": {},
@@ -589,9 +589,9 @@ class TestCheckCalibrationStatus:
                     "lights": {},
                     "darks": {
                         "/path/dark1.fits": {
-                            config.KEYWORD_TYPE: "dark",
-                            config.KEYWORD_CAMERA: "ASI2600MM",
-                            config.KEYWORD_EXPOSURESECONDS: "300",
+                            config.NORMALIZED_HEADER_TYPE: "dark",
+                            config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                            config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                         }
                     },
                     "flats": {},
@@ -617,29 +617,29 @@ class TestCheckCalibrationStatus:
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
-                    config.KEYWORD_TYPE: "light",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "light",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "darks": {
                 "/path/dark1.fits": {
-                    config.KEYWORD_TYPE: "dark",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_TYPE: "dark",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 },
                 "/path/master_dark.fits": {
-                    config.KEYWORD_TYPE: "master dark",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_EXPOSURESECONDS: "300",
+                    config.NORMALIZED_HEADER_TYPE: "master dark",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 },
             },
             "flats": {
                 "/path/flat1.fits": {
-                    config.KEYWORD_TYPE: "flat",
-                    config.KEYWORD_CAMERA: "ASI2600MM",
-                    config.KEYWORD_FILTER: "Ha",
+                    config.NORMALIZED_HEADER_TYPE: "flat",
+                    config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                    config.NORMALIZED_HEADER_FILTER: "Ha",
                 }
             },
             "bias": {},

@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import List
 
 import ap_common
+from ap_common import setup_logging, progress_iter
+from ap_common.constants import TYPE_LIGHT
 
 from . import config
 from .matching import check_calibration_status
@@ -45,8 +47,8 @@ def find_light_directories(
         dirs=[str(source_path)],
         patterns=config.SUPPORTED_EXTENSIONS,
         recursive=True,
-        required_properties=[config.KEYWORD_TYPE],
-        filters={config.KEYWORD_TYPE: config.TYPE_LIGHT},
+        required_properties=[config.NORMALIZED_HEADER_TYPE],
+        filters={config.NORMALIZED_HEADER_TYPE: TYPE_LIGHT},
         profileFromPath=True,
         debug=debug,
         printStatus=debug,
@@ -257,6 +259,7 @@ def process_light_directories(
     dest_dir: str,
     debug: bool = False,
     dry_run: bool = False,
+    quiet: bool = False,
 ) -> dict:
     """
     Process light directories and move those with calibration frames.
@@ -270,6 +273,7 @@ def process_light_directories(
         dest_dir: Destination directory (e.g., 20_Data)
         debug: Enable debug output
         dry_run: If True, only print what would be done
+        quiet: If True, suppress progress output
 
     Returns:
         Dict with counts: moved, skipped (by reason), errors
@@ -297,7 +301,9 @@ def process_light_directories(
 
     logger.debug(f"Found {len(image_dirs)} directories to check")
 
-    for image_dir in image_dirs:
+    for image_dir in progress_iter(
+        image_dirs, desc="Processing directories", enabled=not quiet
+    ):
         relative_path = get_target_from_path(image_dir, source_dir)
         logger.debug(f"Processing: {relative_path}")
 
@@ -315,15 +321,14 @@ def process_light_directories(
             results["skipped_no_lights"] += 1
             continue
 
-        if debug:
-            logger.debug(
-                f"  Lights: {status['light_count']}, "
-                f"Darks: {status['dark_count']}, "
-                f"Flats: {status['flat_count']}, "
-                f"Bias: {status['bias_count']}"
-            )
-            if status["needs_bias"]:
-                logger.debug("  Note: Bias required (dark exposure != light exposure)")
+        logger.debug(
+            f"Lights: {status['light_count']}, "
+            f"Darks: {status['dark_count']}, "
+            f"Flats: {status['flat_count']}, "
+            f"Bias: {status['bias_count']}"
+        )
+        if status["needs_bias"]:
+            logger.debug("Note: Bias required (dark exposure != light exposure)")
 
         if not status["is_complete"]:
             # Use the missing list from calibration status instead of rebuilding
@@ -427,10 +432,17 @@ def main() -> int:
         help="Show what would be done without actually moving files",
     )
 
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress progress output",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
-    config.setup_logging(debug=args.debug)
+    logger = setup_logging(name="ap_move_light_to_data", debug=args.debug)
 
     # Validate source directory
     source_path = Path(ap_common.replace_env_vars(args.source_dir))
@@ -482,6 +494,7 @@ def main() -> int:
         args.dest_dir,
         args.debug,
         args.dry_run,
+        args.quiet,
     )
 
     # Print summary
