@@ -316,6 +316,7 @@ def check_calibration_status(
         "light_metadata": None,
         "reason": "",
         "skip_reason_code": config.SKIP_REASON_NONE,
+        "missing": [],
         "matched_darks": [],
         "matched_flats": [],
         "matched_bias": [],
@@ -391,7 +392,12 @@ def check_calibration_status(
     if missing:
         result["is_complete"] = False
         result["reason"] = f"Missing {', '.join(missing)}"
-        # Set structured skip reason code (priority: bias > flats > darks)
+        result["missing"] = missing
+        # Set structured skip reason code with priority: bias > flats > darks
+        # This priority ensures the most specific requirement is reported first.
+        # Bias is highest priority (most specific - exposure mismatch case)
+        # Flats are medium priority (filter-specific)
+        # Darks are lowest priority (most general)
         if result["needs_bias"] and not result["has_bias"]:
             result["skip_reason_code"] = config.SKIP_REASON_NO_BIAS
         elif not result["has_flats"]:
@@ -400,5 +406,6 @@ def check_calibration_status(
             result["skip_reason_code"] = config.SKIP_REASON_NO_DARKS
     else:
         result["is_complete"] = True
+        result["missing"] = []
 
     return result

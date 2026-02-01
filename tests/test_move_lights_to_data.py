@@ -127,6 +127,105 @@ class TestMoveDirectory:
         assert dest.exists()
 
 
+class TestMoveTargetFiles:
+    """Tests for move_target_files function."""
+
+    def test_moves_files_when_lights_dir_is_leaf(self, tmp_path):
+        """Verify target files moved when lights directory has no subdirs."""
+        # Setup: Create source/target/lights structure with a file at target level
+        source = tmp_path / "source"
+        target_dir = source / "M42"
+        lights_dir = target_dir / "lights"
+        lights_dir.mkdir(parents=True)
+
+        # Create a light file (to make it a leaf)
+        (lights_dir / "light1.fits").touch()
+
+        # Create a target-level file that should be moved
+        target_file = target_dir / "notes.txt"
+        target_file.write_text("observation notes")
+
+        dest = tmp_path / "dest"
+
+        # Execute
+        count = move_lights_to_data.move_target_files(
+            str(lights_dir), str(source), str(dest)
+        )
+
+        # Verify
+        assert count == 1
+        assert (dest / "M42" / "notes.txt").exists()
+        assert (dest / "M42" / "notes.txt").read_text() == "observation notes"
+        assert not target_file.exists()
+
+    def test_skips_when_lights_dir_has_subdirs(self, tmp_path):
+        """Verify no files moved when lights directory has subdirectories."""
+        # Setup
+        source = tmp_path / "source"
+        target_dir = source / "M42"
+        lights_dir = target_dir / "lights"
+        lights_dir.mkdir(parents=True)
+
+        # Create a subdirectory in lights (not a leaf)
+        (lights_dir / "subdir").mkdir()
+
+        target_file = target_dir / "notes.txt"
+        target_file.write_text("test")
+
+        dest = tmp_path / "dest"
+
+        # Execute
+        count = move_lights_to_data.move_target_files(
+            str(lights_dir), str(source), str(dest)
+        )
+
+        # Verify - nothing should move
+        assert count == 0
+        assert target_file.exists()
+
+
+class TestMoveCalibrationFiles:
+    """Tests for move_calibration_files function."""
+
+    def test_moves_calibration_files(self, tmp_path):
+        """Verify calibration files are moved with structure preserved."""
+        source = tmp_path / "source"
+        cal_dir = source / "calibration"
+        cal_dir.mkdir(parents=True)
+
+        dark_file = cal_dir / "dark_300s.fits"
+        dark_file.write_text("dark data")
+
+        dest = tmp_path / "dest"
+
+        count = move_lights_to_data.move_calibration_files(
+            [str(dark_file)], str(source), str(dest)
+        )
+
+        assert count == 1
+        assert (dest / "calibration" / "dark_300s.fits").exists()
+        assert (dest / "calibration" / "dark_300s.fits").read_text() == "dark data"
+        assert not dark_file.exists()
+
+    def test_preserves_directory_structure(self, tmp_path):
+        """Verify relative paths preserved from source to dest."""
+        source = tmp_path / "source"
+        deep_cal = source / "a" / "b" / "c"
+        deep_cal.mkdir(parents=True)
+
+        cal_file = deep_cal / "flat.fits"
+        cal_file.write_text("flat")
+
+        dest = tmp_path / "dest"
+
+        count = move_lights_to_data.move_calibration_files(
+            [str(cal_file)], str(source), str(dest)
+        )
+
+        assert count == 1
+        assert (dest / "a" / "b" / "c" / "flat.fits").exists()
+
+
 class TestProcessLightDirectories:
     """Tests for process_light_directories function."""
 
@@ -305,3 +404,344 @@ class TestProcessLightDirectories:
 
         assert results["skipped_no_lights"] == 1
         assert results["moved"] == 0
+
+
+class TestMoveDirectoryErrorHandling:
+    """Tests for move_directory error handling."""
+
+    def test_handles_move_error_gracefully(self, tmp_path):
+        """Verify errors during move are handled gracefully."""
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "file.fits").touch()
+
+        dest = tmp_path / "nonexistent" / "deep" / "path" / "dest"
+
+        with patch("shutil.move", side_effect=OSError("Permission denied")):
+            result = move_lights_to_data.move_directory(str(source), str(dest))
+
+        assert result is False
+        assert source.exists()
+
+
+class TestMoveTargetFilesErrorHandling:
+    """Tests for move_target_files error handling."""
+
+    def test_handles_lights_dir_not_under_source(self, tmp_path):
+        """Verify graceful handling when lights_dir not under source."""
+        lights_dir = tmp_path / "elsewhere" / "lights"
+        lights_dir.mkdir(parents=True)
+        (lights_dir / "light.fits").touch()
+
+        source = tmp_path / "source"
+        source.mkdir()
+
+        dest = tmp_path / "dest"
+
+        count = move_lights_to_data.move_target_files(
+            str(lights_dir), str(source), str(dest)
+        )
+
+        assert count == 0
+
+    def test_handles_lights_dir_is_source_dir(self, tmp_path):
+        """Verify handling when lights directory is the source directory."""
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "light.fits").touch()
+
+        dest = tmp_path / "dest"
+
+        count = move_lights_to_data.move_target_files(
+            str(source), str(source), str(dest)
+        )
+
+        assert count == 0
+
+    def test_handles_file_move_error(self, tmp_path):
+        """Verify errors during file move are logged and counted."""
+        source = tmp_path / "source"
+        target_dir = source / "M42"
+        lights_dir = target_dir / "lights"
+        lights_dir.mkdir(parents=True)
+        (lights_dir / "light.fits").touch()
+
+        target_file = target_dir / "notes.txt"
+        target_file.write_text("test")
+
+        dest = tmp_path / "dest"
+
+        with patch("ap_common.move_file", side_effect=Exception("Move failed")):
+            count = move_lights_to_data.move_target_files(
+                str(lights_dir), str(source), str(dest)
+            )
+
+        assert count == 0
+
+
+class TestMoveCalibrationFilesErrorHandling:
+    """Tests for move_calibration_files error handling."""
+
+    def test_skips_files_not_under_source(self, tmp_path):
+        """Verify files outside source tree are skipped with warning."""
+        source = tmp_path / "source"
+        source.mkdir()
+
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        external_file = elsewhere / "dark.fits"
+        external_file.write_text("dark")
+
+        dest = tmp_path / "dest"
+
+        count = move_lights_to_data.move_calibration_files(
+            [str(external_file)], str(source), str(dest)
+        )
+
+        assert count == 0
+        assert external_file.exists()
+
+    def test_handles_move_errors_gracefully(self, tmp_path):
+        """Verify errors logged and function continues."""
+        source = tmp_path / "source"
+        cal_dir = source / "cal"
+        cal_dir.mkdir(parents=True)
+
+        cal_file = cal_dir / "dark.fits"
+        cal_file.write_text("dark")
+
+        dest = tmp_path / "dest"
+
+        with patch("ap_common.move_file", side_effect=OSError("Move failed")):
+            count = move_lights_to_data.move_calibration_files(
+                [str(cal_file)], str(source), str(dest)
+            )
+
+        assert count == 0
+
+
+class TestFindLightDirectoriesEdgeCases:
+    """Tests for find_light_directories edge cases."""
+
+    @patch("ap_common.get_filtered_metadata")
+    def test_handles_no_light_directories(self, mock_get_metadata, tmp_path):
+        """Verify handles case when no light directories found."""
+        mock_get_metadata.return_value = {}
+
+        result = move_lights_to_data.find_light_directories(str(tmp_path))
+
+        assert result == []
+
+
+class TestProcessLightDirectoriesEdgeCases:
+    """Tests for process_light_directories edge cases."""
+
+    @patch("ap_move_lights_to_data.move_lights_to_data.check_calibration_status")
+    @patch("ap_move_lights_to_data.move_lights_to_data.find_light_directories")
+    def test_counts_errors_on_move_failure(self, mock_find, mock_status, tmp_path):
+        """Verify errors are counted when move fails."""
+        light_dir = tmp_path / "lights"
+        light_dir.mkdir()
+
+        mock_find.return_value = [str(light_dir)]
+        mock_status.return_value = {
+            "has_lights": True,
+            "has_darks": True,
+            "has_flats": True,
+            "has_bias": False,
+            "needs_bias": False,
+            "is_complete": True,
+            "light_count": 10,
+            "dark_count": 5,
+            "flat_count": 5,
+            "bias_count": 0,
+            "skip_reason_code": "",
+            "missing": [],
+            "matched_darks": [],
+            "matched_flats": [],
+            "matched_bias": [],
+        }
+
+        with patch(
+            "ap_move_lights_to_data.move_lights_to_data.move_directory",
+            return_value=False,
+        ):
+            results = move_lights_to_data.process_light_directories(
+                str(tmp_path), str(tmp_path / "dest")
+            )
+
+        assert results["errors"] == 1
+        assert results["moved"] == 0
+
+    @patch("ap_move_lights_to_data.move_lights_to_data.check_calibration_status")
+    @patch("ap_move_lights_to_data.move_lights_to_data.find_light_directories")
+    def test_skips_no_bias_when_needed(self, mock_find, mock_status, tmp_path):
+        """Verify skips when bias needed but missing."""
+        mock_find.return_value = [str(tmp_path / "lights")]
+        mock_status.return_value = {
+            "has_lights": True,
+            "has_darks": True,
+            "has_flats": True,
+            "has_bias": False,
+            "needs_bias": True,
+            "is_complete": False,
+            "light_count": 10,
+            "dark_count": 5,
+            "flat_count": 5,
+            "bias_count": 0,
+            "skip_reason_code": "no_bias",
+            "missing": ["bias"],
+            "matched_darks": [],
+            "matched_flats": [],
+            "matched_bias": [],
+        }
+
+        results = move_lights_to_data.process_light_directories(
+            str(tmp_path), str(tmp_path / "dest")
+        )
+
+        assert results["skipped_no_bias"] == 1
+
+    @patch("ap_move_lights_to_data.move_lights_to_data.check_calibration_status")
+    @patch("ap_move_lights_to_data.move_lights_to_data.find_light_directories")
+    def test_successful_move_increments_moved(self, mock_find, mock_status, tmp_path):
+        """Verify successful moves are counted."""
+        light_dir = tmp_path / "lights"
+        light_dir.mkdir()
+
+        mock_find.return_value = [str(light_dir)]
+        mock_status.return_value = {
+            "has_lights": True,
+            "has_darks": True,
+            "has_flats": True,
+            "has_bias": False,
+            "needs_bias": False,
+            "is_complete": True,
+            "light_count": 10,
+            "dark_count": 5,
+            "flat_count": 5,
+            "bias_count": 0,
+            "skip_reason_code": "",
+            "missing": [],
+            "matched_darks": [],
+            "matched_flats": [],
+            "matched_bias": [],
+        }
+
+        with patch(
+            "ap_move_lights_to_data.move_lights_to_data.move_directory",
+            return_value=True,
+        ):
+            results = move_lights_to_data.process_light_directories(
+                str(tmp_path), str(tmp_path / "dest")
+            )
+
+        assert results["moved"] == 1
+        assert results["errors"] == 0
+
+
+class TestMainCLI:
+    """Tests for main() CLI function."""
+
+    def test_exits_with_error_when_source_does_not_exist(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Verify exits with code 2 when source doesn't exist."""
+        nonexistent = tmp_path / "nonexistent"
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["ap-move-lights-to-data", str(nonexistent), str(tmp_path / "dest")],
+        )
+
+        exit_code = move_lights_to_data.main()
+
+        assert exit_code == 2
+        captured = capsys.readouterr()
+        assert "ERROR: Source directory does not exist" in captured.out
+
+    def test_exits_with_error_when_source_is_not_directory(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Verify exits with code 2 when source is a file."""
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("not a directory")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["ap-move-lights-to-data", str(source_file), str(tmp_path / "dest")],
+        )
+
+        exit_code = move_lights_to_data.main()
+
+        assert exit_code == 2
+        captured = capsys.readouterr()
+        assert "ERROR: Source path is not a directory" in captured.out
+
+    def test_exits_with_error_when_dest_exists_but_not_directory(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Verify exits with code 2 when dest exists but is a file."""
+        source = tmp_path / "source"
+        source.mkdir()
+
+        dest_file = tmp_path / "dest.txt"
+        dest_file.write_text("not a directory")
+
+        monkeypatch.setattr(
+            "sys.argv", ["ap-move-lights-to-data", str(source), str(dest_file)]
+        )
+
+        exit_code = move_lights_to_data.main()
+
+        assert exit_code == 2
+        captured = capsys.readouterr()
+        assert "ERROR: Destination path exists but is not a directory" in captured.out
+
+    @patch("ap_move_lights_to_data.move_lights_to_data.process_light_directories")
+    def test_returns_zero_on_success(self, mock_process, tmp_path, monkeypatch, capsys):
+        """Verify returns 0 when processing succeeds with no errors."""
+        source = tmp_path / "source"
+        source.mkdir()
+        dest = tmp_path / "dest"
+
+        mock_process.return_value = {
+            "moved": 5,
+            "skipped_no_lights": 0,
+            "skipped_no_darks": 0,
+            "skipped_no_flats": 0,
+            "skipped_no_bias": 0,
+            "errors": 0,
+        }
+
+        monkeypatch.setattr(
+            "sys.argv", ["ap-move-lights-to-data", str(source), str(dest)]
+        )
+
+        exit_code = move_lights_to_data.main()
+
+        assert exit_code == 0
+
+    @patch("ap_move_lights_to_data.move_lights_to_data.process_light_directories")
+    def test_returns_one_when_errors_occur(self, mock_process, tmp_path, monkeypatch):
+        """Verify returns 1 when processing has errors."""
+        source = tmp_path / "source"
+        source.mkdir()
+        dest = tmp_path / "dest"
+
+        mock_process.return_value = {
+            "moved": 3,
+            "skipped_no_lights": 0,
+            "skipped_no_darks": 0,
+            "skipped_no_flats": 0,
+            "skipped_no_bias": 0,
+            "errors": 2,
+        }
+
+        monkeypatch.setattr(
+            "sys.argv", ["ap-move-lights-to-data", str(source), str(dest)]
+        )
+
+        exit_code = move_lights_to_data.main()
+
+        assert exit_code == 1

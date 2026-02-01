@@ -82,6 +82,16 @@ Bias frames are **only required** when the dark exposure time does not match the
 If dark exposure matches light exposure: **No bias required**
 If dark exposure differs from light exposure: **Bias required**
 
+### Skip Reason Priority
+
+When multiple calibration types are missing, the tool reports the skip reason using this priority order (highest to lowest):
+
+1. **Bias** (`no_bias`) - Reported when bias is required but missing
+2. **Flats** (`no_flats`) - Reported when flat frames are missing
+3. **Darks** (`no_darks`) - Reported when dark frames are missing
+
+This priority ensures the most specific calibration requirement is surfaced first. For example, if both darks and flats are missing, the skip reason will be `no_flats` because flats are more filter-specific than darks. The structured skip reason codes enable programmatic handling of different calibration gaps.
+
 ## Directory Structure
 
 The tool searches for calibration frames in the lights directory and parent directories up to the source directory. Both co-located and parent directory configurations are supported.

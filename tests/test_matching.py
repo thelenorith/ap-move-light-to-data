@@ -650,3 +650,72 @@ class TestCheckCalibrationStatus:
         assert result["is_complete"] is True
         assert result["dark_count"] == 2  # Both regular and master dark
         assert result["flat_count"] == 1
+
+
+class TestGetFramesByTypeEdgeCases:
+    """Tests for get_frames_by_type edge cases."""
+
+    @patch("ap_common.get_metadata")
+    def test_handles_empty_directory(self, mock_get_metadata):
+        """Verify handles empty directory with no FITS files."""
+        mock_get_metadata.return_value = {}
+
+        result = matching.get_frames_by_type("/empty/dir")
+
+        assert result == {"lights": {}, "darks": {}, "flats": {}, "bias": {}}
+
+    @patch("ap_common.get_metadata")
+    def test_handles_missing_imagetyp(self, mock_get_metadata):
+        """Verify skips files with missing IMAGETYP."""
+        mock_get_metadata.return_value = {
+            "/test/file1.fits": {
+                "file": "/test/file1.fits",
+                "INSTRUME": "CAM1",
+                # Missing IMAGETYP
+            }
+        }
+
+        result = matching.get_frames_by_type("/test/dir")
+
+        # File should be skipped
+        assert result == {"lights": {}, "darks": {}, "flats": {}, "bias": {}}
+
+    @patch("ap_common.get_metadata")
+    def test_handles_unknown_imagetyp(self, mock_get_metadata):
+        """Verify skips files with unknown IMAGETYP."""
+        mock_get_metadata.return_value = {
+            "/test/file1.fits": {
+                "file": "/test/file1.fits",
+                "IMAGETYP": "unknown",
+                "INSTRUME": "CAM1",
+            }
+        }
+
+        result = matching.get_frames_by_type("/test/dir")
+
+        # Unknown type should be skipped
+        assert result == {"lights": {}, "darks": {}, "flats": {}, "bias": {}}
+
+
+class TestFindMatchingFlatsEdgeCases:
+    """Tests for find_matching_flats edge cases."""
+
+    def test_handles_empty_flats_dict(self):
+        """Verify returns empty list when no flats available."""
+        light_metadata = {"INSTRUME": "CAM1", "FILTER": "L"}
+
+        result = matching.find_matching_flats(light_metadata, {})
+
+        assert result == []
+
+
+class TestFindMatchingBiasEdgeCases:
+    """Tests for find_matching_bias edge cases."""
+
+    def test_handles_empty_bias_dict(self):
+        """Verify returns empty list when no bias available."""
+        light_metadata = {"INSTRUME": "CAM1"}
+
+        result = matching.find_matching_bias(light_metadata, {})
+
+        assert result == []

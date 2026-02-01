@@ -95,7 +95,6 @@ def get_target_from_path(light_dir: str, source_dir: str) -> str:
 def move_directory(
     source: str,
     dest: str,
-    debug: bool = False,
     dry_run: bool = False,
 ) -> bool:
     """
@@ -104,7 +103,6 @@ def move_directory(
     Args:
         source: Source directory path
         dest: Destination directory path
-        debug: Enable debug output
         dry_run: If True, only print what would be done
 
     Returns:
@@ -136,7 +134,6 @@ def move_target_files(
     lights_dir: str,
     source_dir: str,
     dest_dir: str,
-    debug: bool = False,
     dry_run: bool = False,
 ) -> int:
     """
@@ -150,7 +147,6 @@ def move_target_files(
         lights_dir: Directory containing light frames
         source_dir: Source root directory
         dest_dir: Destination root directory
-        debug: Enable debug output
         dry_run: If True, only print what would be done
 
     Returns:
@@ -196,7 +192,7 @@ def move_target_files(
 
                 # Move the file
                 try:
-                    ap_common.move_file(str(item), str(dest_file), debug, dry_run)
+                    ap_common.move_file(str(item), str(dest_file), dry_run)
                     moved_count += 1
                     logger.debug(f"Moved target file: {item} -> {dest_file}")
                 except Exception as e:
@@ -211,7 +207,6 @@ def move_calibration_files(
     calibration_files: List[str],
     source_dir: str,
     dest_dir: str,
-    debug: bool = False,
     dry_run: bool = False,
 ) -> int:
     """
@@ -221,7 +216,6 @@ def move_calibration_files(
         calibration_files: List of calibration file paths to move
         source_dir: Source root directory
         dest_dir: Destination root directory
-        debug: Enable debug output
         dry_run: If True, only print what would be done
 
     Returns:
@@ -249,7 +243,7 @@ def move_calibration_files(
 
         # Move the file using ap-common's move_file
         try:
-            ap_common.move_file(str(cal_path), str(dest_file), debug, dry_run)
+            ap_common.move_file(str(cal_path), str(dest_file), dry_run)
             moved_count += 1
             logger.debug(f"Moved calibration file: {cal_file} -> {dest_file}")
         except OSError as e:
@@ -332,15 +326,8 @@ def process_light_directories(
                 logger.debug("  Note: Bias required (dark exposure != light exposure)")
 
         if not status["is_complete"]:
-            # Build detailed message about missing calibration
-            missing = []
-            if not status["has_darks"]:
-                missing.append("darks")
-            if not status["has_flats"]:
-                missing.append("flats")
-            if status["needs_bias"] and not status["has_bias"]:
-                missing.append("bias")
-
+            # Use the missing list from calibration status instead of rebuilding
+            missing = status.get("missing", [])
             missing_str = ", ".join(missing)
             logger.warning(f"Skipping {relative_path}: missing {missing_str}")
 
@@ -363,28 +350,26 @@ def process_light_directories(
         # Move calibration files first (so they're in place before lights)
         total_cal_moved = 0
         total_cal_moved += move_calibration_files(
-            status["matched_darks"], source_dir, dest_dir, debug, dry_run
+            status["matched_darks"], source_dir, dest_dir, dry_run
         )
         total_cal_moved += move_calibration_files(
-            status["matched_flats"], source_dir, dest_dir, debug, dry_run
+            status["matched_flats"], source_dir, dest_dir, dry_run
         )
         if status["needs_bias"]:
             total_cal_moved += move_calibration_files(
-                status["matched_bias"], source_dir, dest_dir, debug, dry_run
+                status["matched_bias"], source_dir, dest_dir, dry_run
             )
 
         logger.debug(f"Moved {total_cal_moved} calibration files")
 
         # Move target-level files if lights dir is a leaf (before moving lights)
-        target_files_moved = move_target_files(
-            image_dir, source_dir, dest_dir, debug, dry_run
-        )
+        target_files_moved = move_target_files(image_dir, source_dir, dest_dir, dry_run)
         if target_files_moved > 0:
             logger.debug(f"Moved {target_files_moved} target-level files")
 
         # Move the lights directory
         dest_full = dest_path / relative_path
-        success = move_directory(image_dir, str(dest_full), debug, dry_run)
+        success = move_directory(image_dir, str(dest_full), dry_run)
 
         if success:
             results["moved"] += 1
@@ -406,8 +391,12 @@ def process_light_directories(
     return results
 
 
-def main():
-    """Main entry point for CLI."""
+def main() -> int:
+    """Main entry point for CLI.
+
+    Returns:
+        0 on success, 1 on processing errors, 2 on usage/validation errors
+    """
     parser = argparse.ArgumentParser(
         description="Move light frames to data directory when calibration frames exist. "
         "Calibration frames (darks, flats, bias) are searched for in the lights "
@@ -443,6 +432,45 @@ def main():
     # Setup logging
     config.setup_logging(debug=args.debug)
 
+    # Validate source directory
+    source_path = Path(ap_common.replace_env_vars(args.source_dir))
+    if not source_path.exists():
+        logger.error(f"Source directory does not exist: {source_path}")
+        print(f"ERROR: Source directory does not exist: {source_path}")
+        return 2
+    if not source_path.is_dir():
+        logger.error(f"Source path is not a directory: {source_path}")
+        print(f"ERROR: Source path is not a directory: {source_path}")
+        return 2
+    if not os.access(source_path, os.R_OK):
+        logger.error(f"Source directory is not readable: {source_path}")
+        print(f"ERROR: Source directory is not readable: {source_path}")
+        return 2
+
+    # Validate destination directory parent (dest may not exist yet)
+    dest_path = Path(ap_common.replace_env_vars(args.dest_dir))
+    # Check if dest exists - if so, must be directory and writable
+    if dest_path.exists():
+        if not dest_path.is_dir():
+            logger.error(f"Destination path exists but is not a directory: {dest_path}")
+            print(f"ERROR: Destination path exists but is not a directory: {dest_path}")
+            return 2
+        if not os.access(dest_path, os.W_OK):
+            logger.error(f"Destination directory is not writable: {dest_path}")
+            print(f"ERROR: Destination directory is not writable: {dest_path}")
+            return 2
+    else:
+        # Dest doesn't exist - check parent is writable
+        if dest_path.parent.exists():
+            if not os.access(dest_path.parent, os.W_OK):
+                logger.error(
+                    f"Cannot create destination directory (parent not writable): {dest_path.parent}"
+                )
+                print(
+                    f"ERROR: Cannot create destination directory (parent not writable): {dest_path.parent}"
+                )
+                return 2
+
     print(f"Source directory: {args.source_dir}")
     print(f"Destination directory: {args.dest_dir}")
 
@@ -467,6 +495,11 @@ def main():
     print(f"  Errors:             {results['errors']}")
     print("=" * 50)
 
+    # Return 1 if there were any errors during processing
+    return 1 if results["errors"] > 0 else 0
+
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    sys.exit(main())
