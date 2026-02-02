@@ -2,6 +2,10 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Test](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/test.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/test.yml)
+[![Coverage](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/coverage.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/coverage.yml)
+[![Lint](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/lint.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/lint.yml)
+[![Format](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/format.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/format.yml)
 
 Move light frames from blink directory to data directory when calibration frames (darks, flats, and bias if needed) are available.
 
@@ -148,6 +152,14 @@ The tool recognizes both regular and MASTER frame types:
 - `dark`, `DARK`, `master dark`, `MASTER DARK`
 - `flat`, `FLAT`, `master flat`, `MASTER FLAT`
 - `bias`, `BIAS`, `master bias`, `MASTER BIAS`
+
+## Documentation
+
+For comprehensive pipeline documentation, see the [ap-base](https://github.com/jewzaam/ap-base) repository:
+
+- [Pipeline Overview](https://github.com/jewzaam/ap-base/blob/main/docs/pipeline-overview.md) - Architecture and design
+- [Workflow Guide](https://github.com/jewzaam/ap-base/blob/main/docs/workflow-guide.md) - Step-by-step processing guide with diagrams
+- [API Reference](https://github.com/jewzaam/ap-base/blob/main/docs/api-reference.md) - Tool-specific API documentation
 
 ## Dependencies
 
