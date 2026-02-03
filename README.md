@@ -157,9 +157,10 @@ The tool recognizes both regular and MASTER frame types:
 
 For comprehensive pipeline documentation, see the [ap-base](https://github.com/jewzaam/ap-base) repository:
 
-- [Pipeline Overview](https://github.com/jewzaam/ap-base/blob/main/docs/pipeline-overview.md) - Architecture and design
-- [Workflow Guide](https://github.com/jewzaam/ap-base/blob/main/docs/workflow-guide.md) - Step-by-step processing guide with diagrams
-- [API Reference](https://github.com/jewzaam/ap-base/blob/main/docs/api-reference.md) - Tool-specific API documentation
+- [Overview](https://github.com/jewzaam/ap-base/blob/main/docs/index.md) - Pipeline documentation index
+- [Workflow](https://github.com/jewzaam/ap-base/blob/main/docs/workflow.md) - Processing workflow guide
+- [Directory Structure](https://github.com/jewzaam/ap-base/blob/main/docs/directory-structure.md) - Expected directory layout
+- [ap-move-light-to-data](https://github.com/jewzaam/ap-base/blob/main/docs/tools/ap-move-light-to-data.md) - This tool's documentation
 
 ## Dependencies
 
