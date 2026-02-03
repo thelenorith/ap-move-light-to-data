@@ -442,7 +442,9 @@ def main() -> int:
     args = parser.parse_args()
 
     # Setup logging
-    logger = setup_logging(name="ap_move_light_to_data", debug=args.debug, quiet=args.quiet)
+    logger = setup_logging(
+        name="ap_move_light_to_data", debug=args.debug, quiet=args.quiet
+    )
 
     # Validate source directory
     source_path = Path(ap_common.replace_env_vars(args.source_dir))
