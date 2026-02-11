@@ -146,6 +146,7 @@ def collect_calibration_frames(
 def find_matching_darks(
     light_metadata: Dict[str, Any],
     dark_frames: Dict[str, Dict[str, Any]],
+    allow_bias: bool = False,
 ) -> Tuple[List[str], bool]:
     """
     Find dark frames that match the light frame settings.
@@ -153,6 +154,8 @@ def find_matching_darks(
     Args:
         light_metadata: Metadata dict for a light frame
         dark_frames: Dict of dark frame metadata keyed by filepath
+        allow_bias: If False, only exact exposure match darks are returned.
+                   If True, shorter exposure darks are also allowed.
 
     Returns:
         Tuple of (list of matching dark file paths, exposure_matches)
@@ -175,12 +178,13 @@ def find_matching_darks(
                 break
 
         if matches:
-            matching.append(filepath)
             # Check if exposure matches
             dark_exposure = dark_meta.get(config.NORMALIZED_HEADER_EXPOSURESECONDS)
+            exact_exposure_match = False
             if light_exposure is not None and dark_exposure is not None:
                 try:
-                    if float(light_exposure) == float(dark_exposure):
+                    exact_exposure_match = float(light_exposure) == float(dark_exposure)
+                    if exact_exposure_match:
                         exposure_matches = True
                         logger.debug(
                             f"Exposure match: light={light_exposure}s, dark={dark_exposure}s "
@@ -193,6 +197,15 @@ def find_matching_darks(
                         )
                 except (ValueError, TypeError):
                     pass
+
+            # Accept dark if exposure matches exactly OR bias frames are allowed
+            if exact_exposure_match or allow_bias:
+                matching.append(filepath)
+            else:
+                logger.debug(
+                    f"Rejecting dark {filepath}: "
+                    f"exposure mismatch and bias frames not allowed"
+                )
 
     logger.debug(
         f"Found {len(matching)} matching darks, exposure_matches={exposure_matches}"
@@ -275,6 +288,7 @@ def check_calibration_status(
     directory: str,
     source_dir: str,
     debug: bool = False,
+    allow_bias: bool = False,
 ) -> Dict[str, Any]:
     """
     Check calibration status for a directory containing lights.
@@ -347,13 +361,20 @@ def check_calibration_status(
     result["light_metadata"] = light_metadata
 
     # Find matching darks
-    matching_darks, exposure_matches = find_matching_darks(light_metadata, darks)
+    matching_darks, exposure_matches = find_matching_darks(
+        light_metadata, darks, allow_bias
+    )
     result["dark_count"] = len(matching_darks)
     result["has_darks"] = len(matching_darks) > 0
     result["matched_darks"] = matching_darks
 
-    # Determine if bias is needed
-    result["needs_bias"] = not exposure_matches
+    # Bias is only needed if:
+    # - Bias is allowed (--allow-bias flag)
+    # - We have darks with shorter exposure than the light
+    # If bias not allowed, we only use exact match darks (already filtered)
+    # If no darks at all, bias doesn't matter (missing darks)
+    # If dark exposure matches light exposure, no bias needed
+    result["needs_bias"] = allow_bias and result["has_darks"] and not exposure_matches
     logger.debug(
         f"Dark matching: found={len(matching_darks)}, exposure_matches={exposure_matches}, "
         f"needs_bias={result['needs_bias']}"

@@ -13,7 +13,7 @@ class TestFindMatchingDarks:
     """Tests for find_matching_darks function."""
 
     def test_matches_on_camera_settings(self):
-        """Verify darks are matched on camera settings."""
+        """Verify darks are matched on camera settings when bias allowed."""
         light_metadata = {
             config.NORMALIZED_HEADER_CAMERA: "ASI2600MM",
             config.NORMALIZED_HEADER_SETTEMP: "-10",
@@ -43,7 +43,7 @@ class TestFindMatchingDarks:
         }
 
         result, exposure_matches = matching.find_matching_darks(
-            light_metadata, dark_frames
+            light_metadata, dark_frames, allow_bias=True
         )
 
         assert len(result) == 2
@@ -123,11 +123,48 @@ class TestFindMatchingDarks:
             },
         }
 
-        result, _ = matching.find_matching_darks(light_metadata, dark_frames)
+        result, _ = matching.find_matching_darks(
+            light_metadata, dark_frames, allow_bias=True
+        )
 
         # Should only match dark with matching None values (normalized to "")
         assert len(result) == 1
         assert "/path/dark1.fits" in result
+
+    def test_exact_exposure_match_with_empty_readoutmode(self):
+        """Test that exact exposure match works with empty readoutmode.
+
+        Reproduces Camels Eye scenario: R filter, 60s exposure, empty readoutmode.
+        Should find 60s dark with matching settings and NOT require bias.
+        """
+        light_metadata = {
+            config.NORMALIZED_HEADER_CAMERA: "ZWO ASI2600MM Pro",
+            config.NORMALIZED_HEADER_GAIN: "100",
+            config.NORMALIZED_HEADER_OFFSET: "50",
+            config.NORMALIZED_HEADER_SETTEMP: "-10.00",
+            config.NORMALIZED_HEADER_READOUTMODE: "",  # Empty
+            config.NORMALIZED_HEADER_EXPOSURESECONDS: "60.00",
+        }
+
+        dark_frames = {
+            "/path/dark_60.fits": {
+                config.NORMALIZED_HEADER_CAMERA: "ZWO ASI2600MM Pro",
+                config.NORMALIZED_HEADER_GAIN: "100",
+                config.NORMALIZED_HEADER_OFFSET: "50",
+                config.NORMALIZED_HEADER_SETTEMP: "-10.00",
+                config.NORMALIZED_HEADER_READOUTMODE: "",  # Empty (matches light)
+                config.NORMALIZED_HEADER_EXPOSURESECONDS: "60.00",
+            }
+        }
+
+        matches, exposure_matches = matching.find_matching_darks(
+            light_metadata, dark_frames
+        )
+
+        # Should find the dark and recognize exact exposure match
+        assert len(matches) == 1
+        assert "/path/dark_60.fits" in matches
+        assert exposure_matches is True  # Exact match, no bias needed
 
 
 class TestFindMatchingFlats:
@@ -415,7 +452,11 @@ class TestCheckCalibrationStatus:
 
     @patch("ap_move_light_to_data.matching.get_frames_by_type")
     def test_incomplete_when_no_darks(self, mock_get_frames):
-        """Verify is_complete False when no darks exist."""
+        """Verify is_complete False when no darks exist.
+
+        Note: Bias is not needed when there are no darks (bias is only needed
+        when darks have shorter exposure than lights).
+        """
         mock_get_frames.return_value = {
             "lights": {
                 "/path/light1.fits": {
@@ -436,7 +477,7 @@ class TestCheckCalibrationStatus:
         result = matching.check_calibration_status("/test/dir", "/source")
 
         assert result["is_complete"] is False
-        assert result["reason"] == "Missing darks, bias"
+        assert result["reason"] == "Missing darks"
 
     @patch("ap_move_light_to_data.matching.get_frames_by_type")
     def test_incomplete_when_no_flats(self, mock_get_frames):
@@ -499,7 +540,9 @@ class TestCheckCalibrationStatus:
             },
         }
 
-        result = matching.check_calibration_status("/test/dir", "/source")
+        result = matching.check_calibration_status(
+            "/test/dir", "/source", allow_bias=True
+        )
 
         assert result["is_complete"] is True
         assert result["needs_bias"] is True
@@ -534,7 +577,9 @@ class TestCheckCalibrationStatus:
             "bias": {},  # No bias
         }
 
-        result = matching.check_calibration_status("/test/dir", "/source")
+        result = matching.check_calibration_status(
+            "/test/dir", "/source", allow_bias=True
+        )
 
         assert result["is_complete"] is False
         assert result["needs_bias"] is True

@@ -198,7 +198,7 @@ def move_target_files(
 
                 # Move the file
                 try:
-                    ap_common.move_file(str(item), str(dest_file), dry_run)
+                    ap_common.move_file(str(item), str(dest_file), dryrun=dry_run)
                     moved_count += 1
                     logger.debug(f"Moved target file: {item} -> {dest_file}")
                 except Exception as e:
@@ -249,7 +249,7 @@ def move_calibration_files(
 
         # Move the file using ap-common's move_file
         try:
-            ap_common.move_file(str(cal_path), str(dest_file), dry_run)
+            ap_common.move_file(str(cal_path), str(dest_file), dryrun=dry_run)
             moved_count += 1
             logger.debug(f"Moved calibration file: {cal_file} -> {dest_file}")
         except OSError as e:
@@ -264,6 +264,7 @@ def process_light_directories(
     debug: bool = False,
     dry_run: bool = False,
     quiet: bool = False,
+    allow_bias: bool = False,
 ) -> dict:
     """
     Process light directories and move those with calibration frames.
@@ -315,7 +316,7 @@ def process_light_directories(
     filters = set()
 
     for image_dir in image_dirs:
-        status = check_calibration_status(image_dir, source_dir)
+        status = check_calibration_status(image_dir, source_dir, allow_bias=allow_bias)
         # Extract target from path (source/TARGET/DATE/FILTER_EXP_SETTEMP/)
         try:
             rel_path = Path(image_dir).relative_to(source_path)
@@ -324,13 +325,13 @@ def process_light_directories(
         except (ValueError, IndexError):
             pass
 
-        # Extract dates and filters from light frame metadata only
-        for frame in status.get("lights", []):
-            if isinstance(frame, dict):
-                if NORMALIZED_HEADER_DATE in frame:
-                    dates.add(frame[NORMALIZED_HEADER_DATE])
-                if NORMALIZED_HEADER_FILTER in frame:
-                    filters.add(frame[NORMALIZED_HEADER_FILTER])
+        # Extract date and filter from representative light frame metadata
+        light_metadata = status.get("light_metadata")
+        if light_metadata:
+            if NORMALIZED_HEADER_DATE in light_metadata:
+                dates.add(light_metadata[NORMALIZED_HEADER_DATE])
+            if NORMALIZED_HEADER_FILTER in light_metadata:
+                filters.add(light_metadata[NORMALIZED_HEADER_FILTER])
 
     results["dir_count"] = len(image_dirs)
     results["target_count"] = len(targets)
@@ -347,7 +348,7 @@ def process_light_directories(
         logger.debug(f"Processing: {relative_path}")
 
         # Check calibration status
-        status = check_calibration_status(image_dir, source_dir, debug)
+        status = check_calibration_status(image_dir, source_dir, debug, allow_bias)
         logger.debug(
             f"Calibration status for {relative_path}: "
             f"lights={status['light_count']}, darks={status['dark_count']}, "
@@ -461,24 +462,12 @@ def print_summary(results: dict) -> None:
 
     # Calculate totals
     dir_count = results["dir_count"]
-    total_skipped = (
-        results["skipped_no_lights"]
-        + results["skipped_no_darks"]
-        + results["skipped_no_flats"]
-        + results["skipped_no_bias"]
-    )
-    # Directories that had all calibration and could be moved
-    could_move = dir_count - total_skipped
 
     print(
         f"Directories: {dir_count} "
         f"({plural(results['target_count'], 'target')}, "
         f"{plural(results['date_count'], 'date')}, "
         f"{plural(results['filter_count'], 'filter')})"
-    )
-    print(
-        f"Moved:  {results['moved']} of {could_move} | "
-        f"{status_indicator(results['moved'], could_move)}"
     )
     print(
         f"Darks:  {dir_count - results['skipped_no_darks']} of {dir_count} | "
@@ -541,6 +530,13 @@ def main() -> int:
         help="Suppress progress output",
     )
 
+    parser.add_argument(
+        "--allow-bias",
+        action="store_true",
+        help="Allow shorter darks with bias frames. "
+        "Default: only exact exposure match darks are accepted.",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -599,6 +595,7 @@ def main() -> int:
         args.debug,
         args.dryrun,
         args.quiet,
+        args.allow_bias,
     )
 
     # Print summary
