@@ -62,12 +62,6 @@ def test_flat_match_keywords():
     assert NORMALIZED_HEADER_CAMERA in config.FLAT_MATCH_KEYWORDS
 
 
-def test_default_directories():
-    """Verify default directory names."""
-    assert config.DEFAULT_BLINK_DIR == "10_Blink"
-    assert config.DEFAULT_DATA_DIR == "20_Data"
-
-
 def test_supported_extensions():
     """Verify supported file extensions (regex patterns)."""
     assert r"\.fits$" in config.SUPPORTED_EXTENSIONS

@@ -54,9 +54,9 @@ FLAT_MATCH_KEYWORDS = [
     NORMALIZED_HEADER_FILTER,
 ]
 
-# Default directory names
-DEFAULT_BLINK_DIR = "10_Blink"
-DEFAULT_DATA_DIR = "20_Data"
+# Default path pattern to match accept directories
+# Matches paths containing an "accept" directory component
+DEFAULT_PATH_PATTERN = r".*[/\\]accept[/\\].*"
 
 # Supported file extensions (regex patterns for file matching)
 SUPPORTED_EXTENSIONS = [r"\.fits$", r"\.fit$", r"\.xisf$"]

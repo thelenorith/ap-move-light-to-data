@@ -22,7 +22,9 @@ class TestFindLightDirectories:
             os.path.join(light_dir, "light_002.fits"): {"type": "LIGHT"},
         }
 
-        result = move_lights_to_data.find_light_directories(str(tmp_path / "10_Blink"))
+        result = move_lights_to_data.find_light_directories(
+            str(tmp_path / "10_Blink"), path_pattern=".*"
+        )
 
         assert len(result) == 1
         assert light_dir in result
@@ -37,7 +39,9 @@ class TestFindLightDirectories:
             os.path.join(dir2, "light_001.xisf"): {"type": "LIGHT"},
         }
 
-        result = move_lights_to_data.find_light_directories(str(tmp_path / "10_Blink"))
+        result = move_lights_to_data.find_light_directories(
+            str(tmp_path / "10_Blink"), path_pattern=".*"
+        )
 
         assert len(result) == 2
         assert dir1 in result
@@ -48,7 +52,9 @@ class TestFindLightDirectories:
         """Verify empty list when no LIGHT frames exist."""
         mock_metadata.return_value = {}
 
-        result = move_lights_to_data.find_light_directories(str(tmp_path / "10_Blink"))
+        result = move_lights_to_data.find_light_directories(
+            str(tmp_path / "10_Blink"), path_pattern=".*"
+        )
 
         assert len(result) == 0
 
@@ -256,6 +262,7 @@ class TestProcessLightDirectories:
         results = move_lights_to_data.process_light_directories(
             str(tmp_path / "10_Blink"),
             str(tmp_path / "20_Data"),
+            path_pattern=".*",
         )
 
         assert results["skipped_no_darks"] == 1
@@ -288,6 +295,7 @@ class TestProcessLightDirectories:
         results = move_lights_to_data.process_light_directories(
             str(tmp_path / "10_Blink"),
             str(tmp_path / "20_Data"),
+            path_pattern=".*",
         )
 
         assert results["skipped_no_flats"] == 1
@@ -320,6 +328,7 @@ class TestProcessLightDirectories:
         results = move_lights_to_data.process_light_directories(
             str(tmp_path / "10_Blink"),
             str(tmp_path / "20_Data"),
+            path_pattern=".*",
         )
 
         assert results["skipped_no_bias"] == 1
@@ -369,6 +378,7 @@ class TestProcessLightDirectories:
         results = move_lights_to_data.process_light_directories(
             str(source_dir),
             str(tmp_path / "20_Data"),
+            path_pattern=".*",
         )
 
         assert results["moved"] == 1
@@ -400,6 +410,7 @@ class TestProcessLightDirectories:
         results = move_lights_to_data.process_light_directories(
             str(tmp_path / "10_Blink"),
             str(tmp_path / "20_Data"),
+            path_pattern=".*",
         )
 
         assert results["skipped_no_lights"] == 1
@@ -528,7 +539,9 @@ class TestFindLightDirectoriesEdgeCases:
         """Verify handles case when no light directories found."""
         mock_get_metadata.return_value = {}
 
-        result = move_lights_to_data.find_light_directories(str(tmp_path))
+        result = move_lights_to_data.find_light_directories(
+            str(tmp_path), path_pattern=".*"
+        )
 
         assert result == []
 
@@ -567,7 +580,9 @@ class TestProcessLightDirectoriesEdgeCases:
             return_value=False,
         ):
             results = move_lights_to_data.process_light_directories(
-                str(tmp_path), str(tmp_path / "dest")
+                str(tmp_path),
+                str(tmp_path / "dest"),
+                path_pattern=".*",
             )
 
         assert results["errors"] == 1
@@ -597,7 +612,9 @@ class TestProcessLightDirectoriesEdgeCases:
         }
 
         results = move_lights_to_data.process_light_directories(
-            str(tmp_path), str(tmp_path / "dest")
+            str(tmp_path),
+            str(tmp_path / "dest"),
+            path_pattern=".*",
         )
 
         assert results["skipped_no_bias"] == 1
@@ -633,7 +650,9 @@ class TestProcessLightDirectoriesEdgeCases:
             return_value=True,
         ):
             results = move_lights_to_data.process_light_directories(
-                str(tmp_path), str(tmp_path / "dest")
+                str(tmp_path),
+                str(tmp_path / "dest"),
+                path_pattern=".*",
             )
 
         assert results["moved"] == 1
