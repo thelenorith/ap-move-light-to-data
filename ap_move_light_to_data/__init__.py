@@ -29,23 +29,24 @@ from .config import (
     DARK_MATCH_KEYWORDS,
     FLAT_MATCH_KEYWORDS,
     SUPPORTED_EXTENSIONS,
-    SUPPORTED_EXTENSIONS_RAW,
 )
 
 from .matching import (
-    get_frames_by_type,
-    find_matching_darks,
-    find_matching_flats,
-    find_matching_bias,
-    check_calibration_status,
-    collect_calibration_frames,
+    get_light_frames,
+    find_all_light_directories,
+    check_calibration_for_light,
+    is_file_inside_tree,
 )
 
 from .move_lights_to_data import (
-    find_light_directories,
-    get_target_from_path,
-    move_directory,
+    build_search_dirs,
+    is_group_complete_and_self_contained,
+    filter_by_pattern,
+    check_light_directories,
+    find_calibration_directories,
+    organize_into_movable_groups,
     process_light_directories,
+    print_summary,
     main,
 )
 
@@ -69,18 +70,19 @@ __all__ = [
     "DARK_MATCH_KEYWORDS",
     "FLAT_MATCH_KEYWORDS",
     "SUPPORTED_EXTENSIONS",
-    "SUPPORTED_EXTENSIONS_RAW",
     # Matching functions
-    "get_frames_by_type",
-    "find_matching_darks",
-    "find_matching_flats",
-    "find_matching_bias",
-    "check_calibration_status",
-    "collect_calibration_frames",
+    "get_light_frames",
+    "find_all_light_directories",
+    "check_calibration_for_light",
+    "is_file_inside_tree",
     # Main functions
-    "find_light_directories",
-    "get_target_from_path",
-    "move_directory",
+    "build_search_dirs",
+    "is_group_complete_and_self_contained",
+    "filter_by_pattern",
+    "check_light_directories",
+    "find_calibration_directories",
+    "organize_into_movable_groups",
     "process_light_directories",
+    "print_summary",
     "main",
 ]

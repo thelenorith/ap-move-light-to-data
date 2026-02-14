@@ -29,6 +29,7 @@ ap-move-light-to-data = "ap_move_light_to_data.move_lights_to_data:main"
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-mock>=3.0",
     "black>=23.0",
     "flake8>=6.0",
     "mypy",

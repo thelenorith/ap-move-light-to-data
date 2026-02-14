@@ -1,19 +1,32 @@
 # ap-move-light-to-data
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Test](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/test.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/test.yml)
-[![Coverage](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/coverage.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/coverage.yml)
-[![Lint](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/lint.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/lint.yml)
-[![Format](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/format.yml/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/format.yml)
+[![Test](https://github.com/jewzaam/ap-move-light-to-data/workflows/Test/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/test.yml)
+[![Coverage](https://github.com/jewzaam/ap-move-light-to-data/workflows/Coverage%20Check/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/coverage.yml)
+[![Lint](https://github.com/jewzaam/ap-move-light-to-data/workflows/Lint/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/lint.yml)
+[![Format](https://github.com/jewzaam/ap-move-light-to-data/workflows/Format%20Check/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/format.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-Move light frames from blink directory to data directory when calibration frames (darks, flats, and bias if needed) are available.
+Move complete directory trees containing light frames and their calibration to the data directory atomically.
+
+## Documentation
+
+This tool is part of the astrophotography pipeline. For comprehensive documentation including workflow guides and integration with other tools, see:
+
+- **[Pipeline Overview](https://github.com/jewzaam/ap-base/blob/main/docs/index.md)** - Full pipeline documentation
+- **[Workflow Guide](https://github.com/jewzaam/ap-base/blob/main/docs/workflow.md)** - Detailed workflow with diagrams
+- **[ap-move-light-to-data Guide](https://github.com/jewzaam/ap-base/blob/main/docs/tools/ap-move-light-to-data.md)** - Detailed usage guide for this tool
 
 ## Overview
 
-This tool automates the workflow step between blinking/reviewing light frames and processing them. It only moves light frames to the data directory when matching calibration frames exist, ensuring you don't start processing data that can't be properly calibrated.
+Automates the workflow step between blinking/reviewing light frames and processing them. The tool moves complete directory trees atomically when all lights have required calibration and all calibration is self-contained within the tree.
 
-Calibration frames are searched for in the lights directory first, then in parent directories up to the source directory boundary. This supports flexible workflows where filter-specific flats are stored with lights while shared darks are in parent directories.
+**Key features:**
+- Moves entire directory trees atomically (prevents shared calibration file issues)
+- Requires calibration to be self-contained (inside the tree being moved)
+- Clear indicators: moved directories are ready, remaining directories need more calibration
+- Supports multi-session workflows (move complete sessions, leave incomplete ones)
+- Searches for calibration in light directory and parent directories within the tree
 
 ## Installation
 
@@ -35,152 +48,46 @@ pip install git+https://github.com/jewzaam/ap-move-light-to-data.git
 python -m ap_move_light_to_data <source_dir> <dest_dir> [options]
 ```
 
-### Arguments
-
-- `source_dir`: Source directory containing light frames (typically `10_Blink`)
-- `dest_dir`: Destination directory for lights with calibration (typically `20_Data`)
-
 ### Options
 
-- `-d, --debug`: Enable debug output
-- `-n, --dryrun`: Show what would be done without actually moving files
+| Option | Description |
+|--------|-------------|
+| `--debug`, `-d` | Enable debug output |
+| `--dryrun`, `-n` | Show what would be done without moving files |
+| `--quiet`, `-q` | Suppress progress output |
+| `--allow-bias` | Allow shorter darks with bias frames |
+| `--path-pattern REGEX` | Filter directories by regex pattern |
 
-### Example
-
-```bash
-# Move lights from 10_Blink to 20_Data
-python -m ap_move_light_to_data \
-    "/astrophotography/RedCat51@f4.9+ASI2600MM/10_Blink" \
-    "/astrophotography/RedCat51@f4.9+ASI2600MM/20_Data"
-
-# Dry run to see what would be moved
-python -m ap_move_light_to_data \
-    "10_Blink" \
-    "20_Data" \
-    --dryrun
-```
-
-## Calibration Requirements
-
-Lights are only moved when calibration frames are found (in the lights directory or parent directories) matching these criteria:
-
-### Dark Matching
-- Camera
-- Set temperature
-- Gain
-- Offset
-- Readout mode
-
-### Flat Matching
-- Camera
-- Set temperature
-- Gain
-- Offset
-- Readout mode
-- Filter
-
-### Bias Requirement
-
-Bias frames are **only required** when the dark exposure time does not match the light exposure time. This is because darks with mismatched exposure times need bias subtraction for proper scaling.
-
-If dark exposure matches light exposure: **No bias required**
-If dark exposure differs from light exposure: **Bias required**
-
-### Skip Reason Priority
-
-When multiple calibration types are missing, the tool reports the skip reason using this priority order (highest to lowest):
-
-1. **Bias** (`no_bias`) - Reported when bias is required but missing
-2. **Flats** (`no_flats`) - Reported when flat frames are missing
-3. **Darks** (`no_darks`) - Reported when dark frames are missing
-
-This priority ensures the most specific calibration requirement is surfaced first. For example, if both darks and flats are missing, the skip reason will be `no_flats` because flats are more filter-specific than darks. The structured skip reason codes enable programmatic handling of different calibration gaps.
-
-## Directory Structure
-
-The tool searches for calibration frames in the lights directory and parent directories up to the source directory. Both co-located and parent directory configurations are supported.
-
-### Example 1: Co-located (all frames together)
-
-```
-10_Blink/
-  M31/
-    DATE_2024-01-15/
-      light_001.fits      # Light frames
-      light_002.fits
-      dark_001.fits       # Dark frames (same dir)
-      flat_Ha_001.fits    # Flat frames (same dir)
-      bias_001.fits       # Bias (if needed)
-```
-
-### Example 2: Parent directory (shared calibration)
-
-```
-10_Blink/
-  M31/
-    DATE_2024-01-15/
-      dark_001.fits          # Shared darks in date directory
-      dark_002.fits
-      FILTER_Ha/
-        light_001.fits       # Light frames
-        light_002.fits
-        flat_Ha_001.fits     # Filter-specific flats with lights
-        flat_Ha_002.fits
-```
-
-### Example 3: Mixed (flats with lights, darks in parent)
-
-```
-10_Blink/
-  M31/
-    DATE_2024-01-15/
-      master_dark_300s.fits  # Shared master dark in parent
-      FILTER_Ha/
-        light_001.fits       # Lights
-        flat_Ha_001.fits     # Flats with lights
-      FILTER_OIII/
-        light_001.fits       # Lights
-        flat_OIII_001.fits   # Flats with lights
-        # Both filters use same master_dark_300s.fits from parent
-```
-
-The tool searches from the lights directory upward, stopping before reaching the source directory (`10_Blink` in these examples).
-
-### Frame Type Support
-
-The tool recognizes both regular and MASTER frame types:
-- `dark`, `DARK`, `master dark`, `MASTER DARK`
-- `flat`, `FLAT`, `master flat`, `MASTER FLAT`
-- `bias`, `BIAS`, `master bias`, `MASTER BIAS`
-
-## Documentation
-
-For comprehensive pipeline documentation, see the [ap-base](https://github.com/jewzaam/ap-base) repository:
-
-- [Overview](https://github.com/jewzaam/ap-base/blob/main/docs/index.md) - Pipeline documentation index
-- [Workflow](https://github.com/jewzaam/ap-base/blob/main/docs/workflow.md) - Processing workflow guide
-- [Directory Structure](https://github.com/jewzaam/ap-base/blob/main/docs/directory-structure.md) - Expected directory layout
-- [ap-move-light-to-data](https://github.com/jewzaam/ap-base/blob/main/docs/tools/ap-move-light-to-data.md) - This tool's documentation
-
-## Dependencies
-
-- [ap-common](https://github.com/jewzaam/ap-common): Shared astrophotography utilities
-
-## Development
+### Examples
 
 ```bash
-# Install dev dependencies
-make install-dev
+# Move complete directory trees from 10_Blink to 20_Data
+python -m ap_move_light_to_data 10_Blink 20_Data
 
-# Run tests
-make test
+# Dry run to preview what would be moved
+python -m ap_move_light_to_data 10_Blink 20_Data --dryrun
 
-# Run tests with coverage
-make test-coverage
+# Process only accept directories (skip rejected)
+python -m ap_move_light_to_data 10_Blink 20_Data --path-pattern ".*accept.*"
 
-# Format code
-make format
-
-# Lint code
-make lint
+# Allow shorter darks with bias frames
+python -m ap_move_light_to_data 10_Blink 20_Data --allow-bias
 ```
+
+## How It Works
+
+The tool recursively evaluates directory trees and moves them atomically when:
+1. All light frames have required calibration (darks, flats, bias if needed)
+2. All calibration files are self-contained within the tree (not in parent directories)
+
+**Calibration matching criteria:**
+- **Darks**: Camera, set temperature, gain, offset, readout mode, exposure (unless `--allow-bias`)
+- **Flats**: Camera, set temperature, gain, offset, readout mode, filter
+- **Bias**: Only required with `--allow-bias` when dark exposure doesn't match light exposure
+
+**Recursive evaluation:**
+- Complete TARGET directory → moves entire TARGET atomically
+- Incomplete TARGET but complete DATE directories → moves only complete DATEs
+- Incomplete directories are skipped and reported with missing calibration details
+
+**Example:** If `M31/DATE_2026-02-07` is complete but `M31/DATE_2026-02-08` is missing darks, only the complete date moves. The incomplete date remains as a clear indicator that more calibration is needed.

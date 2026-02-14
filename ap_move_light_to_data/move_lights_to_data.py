@@ -10,268 +10,410 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any, Optional
 
 import ap_common
 from ap_common import setup_logging, progress_iter
-from ap_common.constants import (
-    TYPE_LIGHT,
-    NORMALIZED_HEADER_DATE,
-    NORMALIZED_HEADER_FILTER,
-)
+from ap_common.progress import ProgressTracker
 
 from . import config
-from .matching import check_calibration_status
+from .matching import (
+    get_light_frames,
+    find_all_light_directories,
+    check_calibration_for_light,
+    is_file_inside_tree,
+)
 
 logger = logging.getLogger("ap_move_light_to_data.move_lights_to_data")
 
+# Set default description width for aligned progress bars
+ProgressTracker.set_default_desc_width(20)
 
-def find_light_directories(
-    source_dir: str,
-    path_pattern: str,
-    debug: bool = False,
-) -> List[str]:
+
+def build_search_dirs(directory: str, source_dir: str) -> List[str]:
     """
-    Find directories containing light frames in the source directory.
-
-    Uses ap-common metadata filtering to identify LIGHT frames specifically,
-    not just any image files. Returns unique directories containing lights.
+    Build list of directories to search for calibration (current + parents up to source).
 
     Args:
-        source_dir: Root directory to search (e.g., 10_Blink)
-        debug: Enable debug output
-        path_pattern: Optional regex pattern to filter directory paths (None = no filtering)
+        directory: Starting directory
+        source_dir: Source root (boundary, not included in search)
 
     Returns:
-        List of directory paths containing light frames matching pattern
+        List of directory paths ordered from child to parent
     """
-    source_path = Path(ap_common.replace_env_vars(source_dir))
+    search_dirs = []
+    current = Path(directory).resolve()
+    source = Path(ap_common.replace_env_vars(source_dir)).resolve()
 
-    logger.debug(f"Searching for light directories in: {source_path}")
+    while current != source and current.parent != current:
+        search_dirs.append(str(current))
+        current = current.parent
+        if current == source:
+            break
 
-    # Use ap-common to find LIGHT frames specifically
-    light_metadata = ap_common.get_filtered_metadata(
-        dirs=[str(source_path)],
-        patterns=config.SUPPORTED_EXTENSIONS,
-        recursive=True,
-        required_properties=[config.NORMALIZED_HEADER_TYPE],
-        filters={config.NORMALIZED_HEADER_TYPE: TYPE_LIGHT},
-        profileFromPath=True,
+    return search_dirs
+
+
+def is_group_complete_and_self_contained(
+    group_path: str,
+    source_dir: str,
+    allow_bias: bool,
+    debug: bool,
+    quiet: bool,
+    metadata_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Check if a directory group is complete (all lights have calibration)
+    and self-contained (all calibration is inside the group).
+
+    Args:
+        group_path: Directory group to evaluate
+        source_dir: Source root directory
+        allow_bias: Allow shorter darks with bias frames
+        debug: Enable debug output
+        quiet: Suppress progress output
+        metadata_cache: Optional pre-loaded metadata dict
+
+    Returns:
+        Dict with:
+            - is_complete: bool (all lights have calibration)
+            - is_self_contained: bool (all calibration inside group)
+            - can_move: bool (complete AND self-contained)
+            - light_directories: List[str] (all light dirs in group)
+            - calibration_files: Set[str] (all required calibration file paths)
+            - incomplete_dirs: List[str] (light dirs missing calibration)
+    """
+    resolved_group_path = Path(group_path).resolve()
+
+    result = {
+        "is_complete": False,
+        "is_self_contained": False,
+        "can_move": False,
+        "light_directories": [],
+        "calibration_files": set(),
+        "incomplete_dirs": [],
+    }
+
+    # Find all light directories in this group
+    light_dirs = find_all_light_directories(
+        root_dir=str(resolved_group_path),
+        metadata_cache=metadata_cache if metadata_cache is not None else {},
         debug=debug,
-        printStatus=debug,
     )
+    result["light_directories"] = light_dirs
 
-    # Extract unique directories from light frame paths
-    light_dirs = set()
-    for filepath in light_metadata.keys():
-        directory = os.path.dirname(filepath)
-        if directory not in light_dirs:
-            light_dirs.add(directory)
-            logger.debug(f"Found light frame in: {directory}")
+    if not light_dirs:
+        return result
 
-    result = sorted(light_dirs)
-    logger.debug(f"Found {len(result)} directories with light frames")
+    # Check calibration for each light directory
+    all_calibration_files = set()
+    incomplete_dirs = []
 
-    # Filter by path pattern if provided
-    if path_pattern:
-        try:
-            pattern = re.compile(path_pattern)
-            filtered_result = [d for d in result if pattern.search(d)]
-            logger.debug(
-                f"Path pattern '{path_pattern}' filtered {len(result)} -> {len(filtered_result)} directories"
-            )
-            result = filtered_result
-        except re.error as e:
-            logger.error(f"Invalid regex pattern '{path_pattern}': {e}")
-            raise ValueError(f"Invalid regex pattern '{path_pattern}': {e}")
+    for light_dir in light_dirs:
+        # Get one light frame as reference
+        lights = get_light_frames(
+            directory=light_dir,
+            metadata_cache=metadata_cache if metadata_cache is not None else {},
+            debug=debug,
+        )
+        if not lights:
+            continue
+
+        light_metadata = next(iter(lights.values()))
+
+        # Build search directories (light dir + parents up to source)
+        search_dirs = build_search_dirs(light_dir, source_dir)
+
+        # Check calibration
+        cal_status = check_calibration_for_light(
+            light_metadata=light_metadata,
+            search_dirs=search_dirs,
+            metadata_cache=metadata_cache if metadata_cache is not None else {},
+            allow_bias=allow_bias,
+            debug=debug,
+            quiet=quiet,
+        )
+
+        if not cal_status["is_complete"]:
+            incomplete_dirs.append((light_dir, cal_status["missing"]))
+        else:
+            # Collect all calibration file paths
+            all_calibration_files.update(cal_status["matched_darks"])
+            all_calibration_files.update(cal_status["matched_flats"])
+            all_calibration_files.update(cal_status["matched_bias"])
+
+    result["incomplete_dirs"] = incomplete_dirs
+    result["calibration_files"] = all_calibration_files
+    result["is_complete"] = len(incomplete_dirs) == 0
+
+    # Check if self-contained (all calibration inside group)
+    if result["is_complete"]:
+        all_inside = all(
+            is_file_inside_tree(cal_file, str(resolved_group_path))
+            for cal_file in all_calibration_files
+        )
+        result["is_self_contained"] = all_inside
+        result["can_move"] = all_inside
 
     return result
 
 
-def get_target_from_path(light_dir: str, source_dir: str) -> str:
+def filter_by_pattern(light_dirs: List[str], path_pattern: Optional[str]) -> List[str]:
     """
-    Extract the target/structure path relative to source directory.
+    Step 2: Filter light directories by pattern.
 
     Args:
-        light_dir: Full path to light directory
-        source_dir: Source root directory (e.g., 10_Blink path)
+        light_dirs: List of light directory paths
+        path_pattern: Optional regex pattern to filter paths
 
     Returns:
-        Relative path structure (e.g., "M31/DATE_2024-01-15/...")
+        Filtered list of light directory paths
     """
-    source_path = Path(ap_common.replace_env_vars(source_dir))
-    light_path = Path(light_dir)
-
-    try:
-        relative = light_path.relative_to(source_path)
-        return str(relative)
-    except ValueError:
-        # Fallback to just the directory name
-        logger.warning(
-            f"Could not compute relative path from {source_path} to {light_path}, "
-            f"using directory name"
-        )
-        return light_path.name
-
-
-def move_directory(
-    source: str,
-    dest: str,
-    dry_run: bool = False,
-) -> bool:
-    """
-    Move a directory and its contents to a new location.
-
-    Args:
-        source: Source directory path
-        dest: Destination directory path
-        dry_run: If True, only print what would be done
-
-    Returns:
-        True if successful (or dry run), False otherwise
-    """
-    source_path = Path(source)
-    dest_path = Path(dest)
-
-    logger.debug(f"Moving: {source_path} -> {dest_path}")
-
-    if dry_run:
-        return True
-
-    try:
-        # Create parent directory if needed
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created parent directory: {dest_path.parent}")
-
-        # Move the directory
-        shutil.move(str(source_path), str(dest_path))
-        logger.debug(f"Successfully moved: {source_path} -> {dest_path}")
-        return True
-    except (OSError, shutil.Error) as e:
-        logger.error(f"Error moving directory from {source_path} to {dest_path}: {e}")
-        return False
-
-
-def move_target_files(
-    lights_dir: str,
-    source_dir: str,
-    dest_dir: str,
-    dry_run: bool = False,
-) -> int:
-    """
-    Move non-FITS files from target-level directory when lights dir is a leaf.
-
-    If the lights directory has no subdirectories (is a leaf), this moves all
-    non-directory files from the target-level directory (first directory under
-    source_dir) to the corresponding location in dest_dir.
-
-    Args:
-        lights_dir: Directory containing light frames
-        source_dir: Source root directory
-        dest_dir: Destination root directory
-        dry_run: If True, only print what would be done
-
-    Returns:
-        Number of files successfully moved
-    """
-    lights_path = Path(lights_dir)
-    source_path = Path(ap_common.replace_env_vars(source_dir))
-    dest_path = Path(ap_common.replace_env_vars(dest_dir))
-
-    # Check if lights directory is a leaf (has no subdirectories)
-    has_subdirs = any(lights_path.iterdir()) and any(
-        item.is_dir() for item in lights_path.iterdir()
-    )
-    if has_subdirs:
+    if path_pattern:
+        filtered = [d for d in light_dirs if re.search(path_pattern, d)]
         logger.debug(
-            f"Lights directory {lights_dir} has subdirectories, skipping target files"
+            f"Pattern '{path_pattern}' matched {len(filtered)} of {len(light_dirs)} directories"
         )
-        return 0
-
-    # Find target-level directory (first directory under source_dir)
-    try:
-        relative_to_source = lights_path.relative_to(source_path)
-        parts = relative_to_source.parts
-        if not parts:
-            logger.debug("Lights directory is source directory, no target level")
-            return 0
-
-        target_dir = source_path / parts[0]
-    except ValueError:
-        logger.warning(
-            f"Lights directory {lights_dir} is not under source {source_path}"
-        )
-        return 0
-
-    # Find all non-directory files in target directory
-    moved_count = 0
-    try:
-        for item in target_dir.iterdir():
-            if item.is_file():
-                # Calculate destination path
-                dest_target = dest_path / parts[0]
-                dest_file = dest_target / item.name
-
-                # Move the file
-                try:
-                    ap_common.move_file(str(item), str(dest_file), dryrun=dry_run)
-                    moved_count += 1
-                    logger.debug(f"Moved target file: {item} -> {dest_file}")
-                except Exception as e:
-                    logger.error(f"Failed to move target file {item}: {e}")
-    except Exception as e:
-        logger.error(f"Error iterating target directory {target_dir}: {e}")
-
-    return moved_count
+        return filtered
+    return light_dirs
 
 
-def move_calibration_files(
-    calibration_files: List[str],
-    source_dir: str,
-    dest_dir: str,
-    dry_run: bool = False,
-) -> int:
+def check_light_directories(
+    light_dirs: List[str],
+    source_dir: Path,
+    allow_bias: bool,
+    debug: bool,
+    quiet: bool,
+    metadata_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """
-    Move calibration files while preserving directory structure.
+    Step 3: Check calibration status for each light directory.
 
     Args:
-        calibration_files: List of calibration file paths to move
+        light_dirs: List of light directory paths
         source_dir: Source root directory
-        dest_dir: Destination root directory
-        dry_run: If True, only print what would be done
+        allow_bias: Allow shorter darks with bias frames
+        debug: Enable debug output
+        quiet: Suppress progress output
+        metadata_cache: Optional pre-loaded metadata dict
 
     Returns:
-        Number of files successfully moved
+        Dict mapping light_dir -> calibration status dict
     """
-    source_path = Path(ap_common.replace_env_vars(source_dir))
-    dest_path = Path(ap_common.replace_env_vars(dest_dir))
-    moved_count = 0
+    status_map = {}
 
-    for cal_file in calibration_files:
-        cal_path = Path(cal_file)
-
-        try:
-            # Calculate relative path from source directory
-            relative_path = cal_path.relative_to(source_path)
-        except ValueError:
-            # File is not under source_dir, skip it
-            logger.warning(
-                f"Calibration file {cal_file} is not under source directory {source_path}, skipping"
-            )
+    for light_dir in progress_iter(
+        light_dirs, desc="Checking calibration", enabled=not quiet
+    ):
+        # Get one light frame as reference
+        lights = get_light_frames(
+            directory=light_dir,
+            metadata_cache=metadata_cache if metadata_cache is not None else {},
+            debug=debug,
+        )
+        if not lights:
             continue
 
-        # Calculate destination path
-        dest_file = dest_path / relative_path
+        light_metadata = next(iter(lights.values()))
 
-        # Move the file using ap-common's move_file
-        try:
-            ap_common.move_file(str(cal_path), str(dest_file), dryrun=dry_run)
-            moved_count += 1
-            logger.debug(f"Moved calibration file: {cal_file} -> {dest_file}")
-        except OSError as e:
-            logger.error(f"Failed to move calibration file {cal_file}: {e}")
+        # Build search directories (light dir + parents up to source)
+        search_dirs = build_search_dirs(light_dir, str(source_dir))
 
-    return moved_count
+        # Check calibration
+        cal_status = check_calibration_for_light(
+            light_metadata=light_metadata,
+            search_dirs=search_dirs,
+            metadata_cache=metadata_cache if metadata_cache is not None else {},
+            allow_bias=allow_bias,
+            debug=debug,
+            quiet=quiet,
+        )
+
+        # Add directory info
+        status_map[light_dir] = {
+            "is_complete": cal_status["is_complete"],
+            "missing": cal_status["missing"],
+            "calibration_files": set(
+                cal_status["matched_darks"]
+                + cal_status["matched_flats"]
+                + cal_status["matched_bias"]
+            ),
+        }
+
+    return status_map
+
+
+def find_calibration_directories(
+    status_map: Dict[str, Dict[str, Any]],
+) -> Dict[str, str]:
+    """
+    Step 4a: Find where calibration exists for each light directory.
+
+    For each light dir, determine which directory contains its calibration files.
+    This could be the light dir itself, or any parent directory.
+
+    Args:
+        status_map: Dict mapping light_dir -> calibration status with calibration_files
+
+    Returns:
+        Dict mapping light_dir -> calibration_directory
+    """
+    calibration_dirs = {}
+
+    for light_dir, status in status_map.items():
+        if not status["calibration_files"]:
+            # No calibration files, skip
+            continue
+
+        # Find the shallowest directory that contains all calibration files
+        light_path = Path(light_dir)
+        calibration_paths = [Path(f) for f in status["calibration_files"]]
+
+        # Start with light dir itself, then check parents
+        candidate_dirs = [light_path]
+        current = light_path.parent
+        while current.parent != current:
+            candidate_dirs.append(current)
+            current = current.parent
+
+        # Find shallowest dir that contains all calibration
+        for candidate in candidate_dirs:
+            if all(
+                is_file_inside_tree(str(cp), str(candidate)) for cp in calibration_paths
+            ):
+                calibration_dirs[light_dir] = str(candidate)
+                break
+
+    return calibration_dirs
+
+
+def organize_into_movable_groups(
+    status_map: Dict[str, Dict[str, Any]], source_dir: Path
+) -> Dict[str, Any]:
+    """
+    Step 4b: Determine which directories can be moved atomically.
+
+    Logic:
+    1. Find calibration directory for each complete light dir
+    2. Exclude calibration dirs that are parents of ANY incomplete light dir
+    3. What remains are directories containing only complete lights
+
+    Args:
+        status_map: Dict mapping light_dir -> calibration status
+        source_dir: Source root directory
+
+    Returns:
+        Dict with 'movable_dirs' and 'incomplete_dirs'
+    """
+    # Separate complete and incomplete
+    complete_lights = {
+        ld: status for ld, status in status_map.items() if status["is_complete"]
+    }
+    incomplete_lights = [
+        (ld, status["missing"])
+        for ld, status in status_map.items()
+        if not status["is_complete"]
+    ]
+
+    # Find calibration directories for complete lights
+    cal_dirs_map = find_calibration_directories(complete_lights)
+
+    # Get unique calibration directories
+    calibration_dirs = set(cal_dirs_map.values())
+
+    # Exclude calibration dirs that are parents of ANY incomplete light
+    for incomplete_light, _ in incomplete_lights:
+        incomplete_path = Path(incomplete_light)
+        # Remove any calibration dir that contains this incomplete light
+        to_remove = set()
+        for cal_dir in calibration_dirs:
+            if is_file_inside_tree(str(incomplete_path), cal_dir):
+                to_remove.add(cal_dir)
+        calibration_dirs -= to_remove
+
+    # Deduplicate nested calibration directories (keep only parents)
+    # If M31 and M31/2024-01-01 are both calibration dirs, only keep M31
+    deduplicated_dirs: set[str] = set()
+    sorted_dirs = sorted(calibration_dirs, key=lambda x: x.count(os.sep))
+
+    for cal_dir in sorted_dirs:
+        # Check if this dir is a child of any already-added parent
+        is_child = False
+        for parent_dir in deduplicated_dirs:
+            if is_file_inside_tree(cal_dir, parent_dir):
+                is_child = True
+                break
+        if not is_child:
+            deduplicated_dirs.add(cal_dir)
+
+    # Build movable groups
+    movable_groups = []
+    for cal_dir in sorted(deduplicated_dirs, key=lambda x: x.count(os.sep)):
+        movable_groups.append(
+            {
+                "path": Path(cal_dir),
+                "relative_path": Path(cal_dir).relative_to(source_dir),
+            }
+        )
+
+    return {"movable_groups": movable_groups, "incomplete_dirs": incomplete_lights}
+
+
+def collect_all_files_in_groups(
+    movable_groups: List[Dict], dest_dir: Path
+) -> List[Dict[str, str]]:
+    """
+    Collect all files across all groups with source and destination paths.
+
+    Args:
+        movable_groups: List of group_plan dicts with "path" and "relative_path"
+        dest_dir: Destination root directory
+
+    Returns:
+        List of dicts with:
+            - "source": source file path
+            - "dest": destination file path
+            - "group": which group this file belongs to (for error reporting)
+    """
+    files = []
+    for group_plan in movable_groups:
+        source_group = Path(group_plan["path"])
+        for root, dirs, filenames in os.walk(source_group):
+            for filename in filenames:
+                source_file = Path(root) / filename
+                # Calculate relative path within this group
+                rel_to_group = source_file.relative_to(source_group)
+                # Build destination path
+                dest_file = dest_dir / group_plan["relative_path"] / rel_to_group
+
+                files.append(
+                    {
+                        "source": str(source_file),
+                        "dest": str(dest_file),
+                        "group": group_plan["relative_path"],
+                    }
+                )
+    return files
+
+
+def sort_groups_leaf_first(movable_groups: List[Dict]) -> List[Dict]:
+    """
+    Sort groups in leaf-first order (deepest paths first).
+
+    This ensures child directories are processed before parent directories,
+    preventing broken states where calibration exists without lights.
+
+    Args:
+        movable_groups: List of group_plan dicts
+
+    Returns:
+        Sorted list with deepest paths first
+    """
+    return sorted(
+        movable_groups,
+        key=lambda t: str(t["path"]).count(os.sep),
+        reverse=True,  # Deepest first
+    )
 
 
 def process_light_directories(
@@ -284,207 +426,228 @@ def process_light_directories(
     allow_bias: bool = False,
 ) -> dict:
     """
-    Process light directories and move those with calibration frames.
-
-    Calibration frames (darks, flats, and bias if needed) are searched for
-    in the lights directory first, then in parent directories up to (but not
-    including) the source directory.
+    Move complete directory groups atomically using discrete steps:
+    1. Collect: Find all light directories recursively
+    2. Filter: Apply pattern to collected directories
+    3. Check: Determine calibration status for each
+    4. Organize: Find movable calibration directories (exclude parents of incomplete)
+    5. Move: Execute atomic directory moves
+    6. Report: Track results and incomplete directories
 
     Args:
-        source_dir: Source directory containing lights (e.g., 10_Blink)
+        source_dir: Source directory (e.g., 10_Blink)
         dest_dir: Destination directory (e.g., 20_Data)
+        path_pattern: Regex pattern to filter paths
         debug: Enable debug output
-        dry_run: If True, only print what would be done
-        quiet: If True, suppress progress output
+        dry_run: Preview without moving
+        quiet: Suppress progress output
         allow_bias: Allow shorter darks with bias frames
-        path_pattern: Optional regex pattern to filter light directory paths (None = no filtering)
 
     Returns:
-        Dict with counts: moved, skipped (by reason), errors
+        Dict with counts: moved, skipped_*, errors
     """
+    source_path = Path(ap_common.replace_env_vars(source_dir)).resolve()
+    dest_path = Path(ap_common.replace_env_vars(dest_dir)).resolve()
+
     results = {
         "dir_count": 0,
         "target_count": 0,
         "date_count": 0,
         "filter_count": 0,
         "moved": 0,
-        "skipped_no_lights": 0,
         "skipped_no_darks": 0,
         "skipped_no_flats": 0,
         "skipped_no_bias": 0,
-        "biases_needed": 0,  # Number of directories that require bias frames
+        "biases_needed": 0,
         "errors": 0,
     }
 
-    source_path = Path(ap_common.replace_env_vars(source_dir))
-    dest_path = Path(ap_common.replace_env_vars(dest_dir))
-
-    logger.debug(f"Processing light directories from {source_path} to {dest_path}")
-
-    # Find all directories with image files
-    image_dirs = find_light_directories(source_dir, path_pattern, debug)
-
-    if not image_dirs:
-        logger.warning(f"No light frame directories found in {source_path}")
+    if not source_path.exists():
+        logger.error(f"Source directory does not exist: {source_path}")
         return results
 
-    logger.debug(f"Found {len(image_dirs)} directories to check")
+    # Phase 0: Load all metadata upfront (single pass)
+    logger.info("Loading all metadata from source directory...")
+    try:
+        metadata_cache = ap_common.get_metadata(
+            dirs=[str(source_path)],
+            profileFromPath=True,
+            patterns=config.SUPPORTED_EXTENSIONS,
+            recursive=True,
+            # Request union of all properties needed for any frame type matching
+            # This ensures ALL files get enriched with actual FITS/XISF headers
+            # (not just filename metadata), even if the filename contains some properties
+            required_properties=config.ALL_REQUIRED_KEYWORDS,
+            debug=debug,
+            printStatus=not quiet,
+        )
+        logger.debug(f"Loaded metadata for {len(metadata_cache):,} files")
+    except (OSError, ValueError) as e:
+        # If metadata loading fails (e.g., corrupt files), fall back to lazy loading
+        logger.warning(f"Failed to load metadata cache: {e}")
+        logger.warning("Falling back to lazy metadata loading (will be slower)")
+        metadata_cache = None
 
-    # Extract organizational metrics from light frames
+    # Step 1: COLLECT
+    all_light_dirs = find_all_light_directories(
+        root_dir=str(source_path),
+        metadata_cache=metadata_cache if metadata_cache is not None else {},
+        debug=debug,
+    )
+
+    if not all_light_dirs:
+        logger.warning(f"No light directories found in {source_path}")
+        return results
+
+    # Step 2: FILTER
+    filtered_light_dirs = filter_by_pattern(all_light_dirs, path_pattern)
+
+    if not filtered_light_dirs:
+        logger.warning(f"No light directories matched pattern in {source_path}")
+        return results
+
+    results["dir_count"] = len(filtered_light_dirs)
+
+    # Extract targets for metrics
     targets = set()
-    dates = set()
-    filters = set()
-
-    for image_dir in image_dirs:
-        status = check_calibration_status(image_dir, source_dir, allow_bias=allow_bias)
-        # Extract target from path (source/TARGET/DATE/FILTER_EXP_SETTEMP/)
+    for light_dir in filtered_light_dirs:
         try:
-            rel_path = Path(image_dir).relative_to(source_path)
-            if len(rel_path.parts) > 0:
-                targets.add(rel_path.parts[0])
-        except (ValueError, IndexError):
+            rel = Path(light_dir).relative_to(source_path)
+            if rel.parts:
+                targets.add(rel.parts[0])
+        except ValueError:
             pass
-
-        # Extract date and filter from representative light frame metadata
-        light_metadata = status.get("light_metadata")
-        if light_metadata:
-            if NORMALIZED_HEADER_DATE in light_metadata:
-                dates.add(light_metadata[NORMALIZED_HEADER_DATE])
-            if NORMALIZED_HEADER_FILTER in light_metadata:
-                filters.add(light_metadata[NORMALIZED_HEADER_FILTER])
-
-    results["dir_count"] = len(image_dirs)
     results["target_count"] = len(targets)
-    results["date_count"] = len(dates)
-    results["filter_count"] = len(filters)
 
-    # Collect warnings to print after progress bar
-    warnings = []
+    # Step 3: CHECK
+    status_map = check_light_directories(
+        filtered_light_dirs, source_path, allow_bias, debug, quiet, metadata_cache
+    )
 
-    for image_dir in progress_iter(
-        image_dirs, desc="Processing directories", enabled=not quiet
-    ):
-        relative_path = get_target_from_path(image_dir, source_dir)
-        logger.debug(f"Processing: {relative_path}")
+    # Step 4: ORGANIZE
+    organized = organize_into_movable_groups(status_map, source_path)
+    movable_groups = organized["movable_groups"]
+    incomplete_dirs = organized["incomplete_dirs"]
 
-        # Check calibration status
-        status = check_calibration_status(image_dir, source_dir, debug, allow_bias)
-        logger.debug(
-            f"Calibration status for {relative_path}: "
-            f"lights={status['light_count']}, darks={status['dark_count']}, "
-            f"flats={status['flat_count']}, bias={status['bias_count']}, "
-            f"complete={status['is_complete']}"
-        )
-
-        if not status["has_lights"]:
-            logger.info(f"Skipping {relative_path}: No light frames found")
-            results["skipped_no_lights"] += 1
-            continue
-
-        logger.debug(
-            f"Lights: {status['light_count']}, "
-            f"Darks: {status['dark_count']}, "
-            f"Flats: {status['flat_count']}, "
-            f"Bias: {status['bias_count']}"
-        )
-        if status["needs_bias"]:
-            logger.debug("Note: Bias required (dark exposure != light exposure)")
+    # Process incomplete dirs for metrics
+    for light_dir, missing in incomplete_dirs:
+        if "darks" in missing:
+            results["skipped_no_darks"] += 1
+        if "flats" in missing:
+            results["skipped_no_flats"] += 1
+        if "bias" in missing:
+            results["skipped_no_bias"] += 1
             results["biases_needed"] += 1
 
-        if not status["is_complete"]:
-            # Use the missing list from calibration status instead of rebuilding
-            missing = status.get("missing", [])
-            missing_str = ", ".join(missing)
-            warnings.append(f"Skipping {relative_path}: missing {missing_str}")
+    # Step 5: MOVE groups atomically
+    # Sort groups in leaf-first order (deepest first)
+    # This prevents broken states where calibration exists without lights
+    movable_groups_ordered = sort_groups_leaf_first(movable_groups)
 
-            # Track specific skip reason using structured code
-            skip_code = status.get("skip_reason_code", "")
-            if skip_code == config.SKIP_REASON_NO_BIAS:
-                results["skipped_no_bias"] += 1
-            elif skip_code == config.SKIP_REASON_NO_FLATS:
-                results["skipped_no_flats"] += 1
-            elif skip_code == config.SKIP_REASON_NO_DARKS:
-                results["skipped_no_darks"] += 1
-            continue
+    if not dry_run:
+        # Phase 1: Copy all files (leaf-first order)
+        # Collect all files to copy
+        logger.debug("Analyzing files to move...")
+        all_files = collect_all_files_in_groups(movable_groups_ordered, dest_path)
 
         logger.debug(
-            f"  Calibration complete: {status['dark_count']} darks, "
-            f"{status['flat_count']} flats"
-            + (f", {status['bias_count']} bias" if status["needs_bias"] else "")
+            f"Copying {len(all_files):,} files across {len(movable_groups):,} directories..."
         )
 
-        # Move calibration files first (so they're in place before lights)
-        total_cal_moved = 0
-        total_cal_moved += move_calibration_files(
-            status["matched_darks"], source_dir, dest_dir, dry_run
-        )
-        total_cal_moved += move_calibration_files(
-            status["matched_flats"], source_dir, dest_dir, dry_run
-        )
-        if status["needs_bias"]:
-            total_cal_moved += move_calibration_files(
-                status["matched_bias"], source_dir, dest_dir, dry_run
+        # Copy with file-level progress
+        copy_errors = []
+        for file_info in progress_iter(
+            all_files,
+            desc="Copying files",
+            unit="files",
+            enabled=not quiet,
+        ):
+            try:
+                ap_common.copy_file(
+                    file_info["source"],
+                    file_info["dest"],
+                    debug=debug,
+                    dryrun=dry_run,
+                )
+            except Exception as e:
+                error_msg = f"Failed to copy {file_info['source']}: {e}"
+                logger.error(error_msg)
+                copy_errors.append(error_msg)
+                # Continue copying other files even if one fails
+
+        # Report copy phase results
+        if copy_errors:
+            logger.error(f"Copy phase had {len(copy_errors)} errors")
+            for error in copy_errors[:10]:  # Show first 10 errors
+                logger.error(f"  {error}")
+            if len(copy_errors) > 10:
+                logger.error(f"  ... and {len(copy_errors) - 10} more errors")
+            results["errors"] += len(copy_errors)
+
+        # Phase 2: Delete source groups (only if copy succeeded)
+        if not copy_errors:
+            logger.info(f"Deleting {len(movable_groups):,} source directories...")
+
+            for group_plan in movable_groups_ordered:
+                source_group = Path(group_plan["path"])
+                try:
+                    shutil.rmtree(source_group)
+                    results["moved"] += 1
+                    logger.debug(f"Deleted source group: {group_plan['relative_path']}")
+                except Exception as e:
+                    error_msg = f"Failed to delete {group_plan['relative_path']}: {e}"
+                    logger.error(error_msg)
+                    results["errors"] += 1
+
+            # Clean up empty parent directories
+            logger.info("Cleaning up empty directories...")
+            ap_common.delete_empty_directories(
+                str(source_path),
+                dryrun=dry_run,
+                printStatus=not quiet,
             )
-
-        logger.debug(f"Moved {total_cal_moved} calibration files")
-
-        # Move target-level files if lights dir is a leaf (before moving lights)
-        target_files_moved = move_target_files(image_dir, source_dir, dest_dir, dry_run)
-        if target_files_moved > 0:
-            logger.debug(f"Moved {target_files_moved} target-level files")
-
-        # Move the lights directory
-        dest_full = dest_path / relative_path
-        success = move_directory(image_dir, str(dest_full), dry_run)
-
-        if success:
-            results["moved"] += 1
-            logger.debug(f"Moved {relative_path} to {dest_full}")
         else:
-            results["errors"] += 1
-            logger.error(f"Failed to move {relative_path}")
+            logger.warning("Skipping source deletion due to copy errors")
+            logger.warning(
+                "Source files remain intact. Fix errors and re-run to complete move."
+            )
+    else:
+        # Dry-run: just count what would be moved
+        movable_groups_ordered = sort_groups_leaf_first(movable_groups)
+        all_files = collect_all_files_in_groups(movable_groups_ordered, dest_path)
+        results["moved"] = len(movable_groups)
+        logger.info(
+            f"DRY RUN: Would move {len(all_files):,} files across {len(movable_groups):,} directories"
+        )
 
-    # Print collected warnings after progress bar completes
-    for warning in warnings:
-        logger.warning(warning)
+    # Step 6: REPORT incomplete directories
+    if incomplete_dirs and not quiet:
+        print("\nThe following directories are missing calibration:")
+        for light_dir, missing in incomplete_dirs:
+            try:
+                rel = Path(light_dir).relative_to(source_path)
+                missing_str = ", ".join(missing)
+                print(f"  - {rel} (missing: {missing_str})")
+            except ValueError:
+                pass
 
-    # Cleanup empty directories in source
-    if not dry_run and results["moved"] > 0:
-        logger.debug(f"Cleaning up empty directories in {source_path}")
-        ap_common.delete_empty_directories(str(source_path), dryrun=dry_run)
-
-    logger.debug(
-        f"Processing complete: moved={results['moved']}, "
-        f"skipped={results['skipped_no_lights'] + results['skipped_no_darks'] + results['skipped_no_flats'] + results['skipped_no_bias']}, "
-        f"errors={results['errors']}"
-    )
     return results
 
 
 def print_summary(results: dict, allow_bias: bool = False) -> None:
-    """
-    Print summary of processing results.
-
-    Args:
-        results: Results dictionary from process_light_directories
-        allow_bias: Whether bias frame checking is enabled
-    """
+    """Print summary of processing results."""
 
     def plural(count: int, singular: str) -> str:
-        """Format count with singular/plural form."""
         return f"{count} {singular}{'s' if count != 1 else ''}"
 
     def status_indicator(present: int, needed: int) -> str:
-        """Return status indicator based on present vs needed."""
         return "ok" if present >= needed else "MISSING!"
 
     print(f"\n{'='*70}")
     print("Summary")
     print(f"{'='*70}")
 
-    # Calculate totals
     dir_count = results["dir_count"]
-
     print(
         f"Directories: {dir_count} "
         f"({plural(results['target_count'], 'target')}, "
@@ -492,15 +655,7 @@ def print_summary(results: dict, allow_bias: bool = False) -> None:
         f"{plural(results['filter_count'], 'filter')})"
     )
 
-    # CRITICAL: Output order MUST be: Biases, Darks, Flats
-    # CRITICAL: Bias MUST ALWAYS be shown (even if 0 of 0)
-    # This order has regressed multiple times - DO NOT CHANGE without updating tests
-    # See test_print_summary_output_order() in tests/test_move_lights_to_data.py
-
-    # When allow_bias=False, bias is not checked, so show "0 of 0"
-    # When allow_bias=True, show count of directories that need bias
-    # - biases_needed = directories where needs_bias=True (no exact dark match)
-    # - biases_present = biases_needed - skipped_no_bias (needed and have bias)
+    # Bias, Darks, Flats order (required by tests)
     if allow_bias:
         biases_needed = results["biases_needed"]
         biases_present = biases_needed - results["skipped_no_bias"]
@@ -520,115 +675,59 @@ def print_summary(results: dict, allow_bias: bool = False) -> None:
         f"Flats:  {dir_count - results['skipped_no_flats']} of {dir_count} | "
         f"{status_indicator(dir_count - results['skipped_no_flats'], dir_count)}"
     )
+
     if results["errors"] > 0:
         print(f"Errors: {results['errors']}")
     print(f"{'='*70}\n")
 
 
 def main() -> int:
-    """Main entry point for CLI.
-
-    Returns:
-        0 on success, 1 on processing errors, 2 on usage/validation errors
-    """
+    """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
-        description="Move light frames to data directory when calibration frames exist. "
-        "Calibration frames (darks, flats, bias) are searched for in the lights "
-        "directory first, then in parent directories within the source tree."
+        description="Move complete directory groups containing light frames and calibration atomically."
     )
 
+    parser.add_argument("source_dir", help="source directory containing lights")
+    parser.add_argument("dest_dir", help="destination directory for lights")
     parser.add_argument(
-        "source_dir",
-        help="source directory containing lights",
+        "--debug", "-d", action="store_true", help="Enable debug output"
     )
-
     parser.add_argument(
-        "dest_dir",
-        help="destination directory for lights",
+        "--dryrun", "-n", action="store_true", help="Preview without moving"
     )
-
     parser.add_argument(
-        "--debug",
-        "-d",
-        action="store_true",
-        help="Enable debug output",
+        "--quiet", "-q", action="store_true", help="Suppress progress output"
     )
-
-    parser.add_argument(
-        "--dryrun",
-        "-n",
-        action="store_true",
-        help="Show what would be done without actually moving files",
-    )
-
-    parser.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        help="Suppress progress output",
-    )
-
     parser.add_argument(
         "--allow-bias",
         action="store_true",
-        help="Allow shorter darks with bias frames. "
-        "Default: only exact exposure match darks are accepted.",
+        help="Allow shorter darks with bias frames",
     )
-
     parser.add_argument(
         "--path-pattern",
         type=str,
         default=config.DEFAULT_PATH_PATTERN,
-        help="Regex pattern to match light directory paths. "
-        f'Default: "{config.DEFAULT_PATH_PATTERN}" (accept directories only). '
-        'Use ".*" to process all directories',
+        help=f'Regex pattern to filter paths (default: "{config.DEFAULT_PATH_PATTERN}")',
     )
 
     args = parser.parse_args()
 
     # Setup logging
-    logger = setup_logging(
-        name="ap_move_light_to_data", debug=args.debug, quiet=args.quiet
-    )
+    setup_logging(name="ap_move_light_to_data", debug=args.debug, quiet=args.quiet)
 
-    # Validate source directory
+    # Validate directories
     source_path = Path(ap_common.replace_env_vars(args.source_dir))
     if not source_path.exists():
-        logger.error(f"Source directory does not exist: {source_path}")
         print(f"ERROR: Source directory does not exist: {source_path}")
         return 2
     if not source_path.is_dir():
-        logger.error(f"Source path is not a directory: {source_path}")
         print(f"ERROR: Source path is not a directory: {source_path}")
         return 2
-    if not os.access(source_path, os.R_OK):
-        logger.error(f"Source directory is not readable: {source_path}")
-        print(f"ERROR: Source directory is not readable: {source_path}")
-        return 2
 
-    # Validate destination directory parent (dest may not exist yet)
     dest_path = Path(ap_common.replace_env_vars(args.dest_dir))
-    # Check if dest exists - if so, must be directory and writable
-    if dest_path.exists():
-        if not dest_path.is_dir():
-            logger.error(f"Destination path exists but is not a directory: {dest_path}")
-            print(f"ERROR: Destination path exists but is not a directory: {dest_path}")
-            return 2
-        if not os.access(dest_path, os.W_OK):
-            logger.error(f"Destination directory is not writable: {dest_path}")
-            print(f"ERROR: Destination directory is not writable: {dest_path}")
-            return 2
-    else:
-        # Dest doesn't exist - check parent is writable
-        if dest_path.parent.exists():
-            if not os.access(dest_path.parent, os.W_OK):
-                logger.error(
-                    f"Cannot create destination directory (parent not writable): {dest_path.parent}"
-                )
-                print(
-                    f"ERROR: Cannot create destination directory (parent not writable): {dest_path.parent}"
-                )
-                return 2
+    if dest_path.exists() and not dest_path.is_dir():
+        print(f"ERROR: Destination exists but is not a directory: {dest_path}")
+        return 2
 
     print(f"Source directory: {args.source_dir}")
     print(f"Destination directory: {args.dest_dir}")
@@ -646,11 +745,9 @@ def main() -> int:
         args.allow_bias,
     )
 
-    # Print summary
     if not args.quiet:
         print_summary(results, allow_bias=args.allow_bias)
 
-    # Return 1 if there were any errors during processing
     return 1 if results["errors"] > 0 else 0
 
 

@@ -64,6 +64,6 @@ def test_flat_match_keywords():
 
 def test_supported_extensions():
     """Verify supported file extensions (regex patterns)."""
-    assert r"\.fits$" in config.SUPPORTED_EXTENSIONS
-    assert r"\.fit$" in config.SUPPORTED_EXTENSIONS
-    assert r"\.xisf$" in config.SUPPORTED_EXTENSIONS
+    assert r".*\.fits$" in config.SUPPORTED_EXTENSIONS
+    assert r".*\.xisf$" in config.SUPPORTED_EXTENSIONS
+    assert r".*\.cr2$" in config.SUPPORTED_EXTENSIONS

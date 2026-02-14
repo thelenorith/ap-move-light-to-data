@@ -14,6 +14,7 @@ from ap_common.constants import (
     NORMALIZED_HEADER_READOUTMODE,
     NORMALIZED_HEADER_EXPOSURESECONDS,
     NORMALIZED_HEADER_FILTER,
+    DEFAULT_IMAGE_PATTERNS,
 )
 
 # Skip reason codes for structured error handling
@@ -54,12 +55,17 @@ FLAT_MATCH_KEYWORDS = [
     NORMALIZED_HEADER_FILTER,
 ]
 
+# Union of all keywords needed for any frame type matching
+# Used as required_properties for metadata loading to ensure all files
+# get enriched with actual FITS/XISF headers (not just filename metadata)
+ALL_REQUIRED_KEYWORDS = list(
+    set(LIGHT_REQUIRED_KEYWORDS + DARK_MATCH_KEYWORDS + FLAT_MATCH_KEYWORDS)
+)
+
 # Default path pattern to match accept directories
 # Matches paths containing an "accept" directory component
 DEFAULT_PATH_PATTERN = r".*[/\\]accept[/\\].*"
 
 # Supported file extensions (regex patterns for file matching)
-SUPPORTED_EXTENSIONS = [r"\.fits$", r"\.fit$", r"\.xisf$"]
-
-# Supported file extensions (for direct extension checks without regex)
-SUPPORTED_EXTENSIONS_RAW = ["fits", "fit", "xisf"]
+# Use ap-common's DEFAULT_IMAGE_PATTERNS for all supported image types
+SUPPORTED_EXTENSIONS = DEFAULT_IMAGE_PATTERNS
