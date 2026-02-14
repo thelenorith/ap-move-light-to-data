@@ -62,7 +62,7 @@ def build_search_dirs(directory: str, source_dir: str) -> List[str]:
 def is_group_complete_and_self_contained(
     group_path: str,
     source_dir: str,
-    allow_bias: bool,
+    scale_darks: bool,
     debug: bool,
     quiet: bool,
     metadata_cache: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -74,7 +74,7 @@ def is_group_complete_and_self_contained(
     Args:
         group_path: Directory group to evaluate
         source_dir: Source root directory
-        allow_bias: Allow shorter darks with bias frames
+        scale_darks: Allow shorter darks with bias frames
         debug: Enable debug output
         quiet: Suppress progress output
         metadata_cache: Optional pre-loaded metadata dict
@@ -134,7 +134,7 @@ def is_group_complete_and_self_contained(
             light_metadata=light_metadata,
             search_dirs=search_dirs,
             metadata_cache=metadata_cache if metadata_cache is not None else {},
-            allow_bias=allow_bias,
+            scale_darks=scale_darks,
             debug=debug,
             quiet=quiet,
         )
@@ -187,7 +187,7 @@ def filter_by_pattern(light_dirs: List[str], path_pattern: Optional[str]) -> Lis
 def check_light_directories(
     light_dirs: List[str],
     source_dir: Path,
-    allow_bias: bool,
+    scale_darks: bool,
     debug: bool,
     quiet: bool,
     metadata_cache: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -198,7 +198,7 @@ def check_light_directories(
     Args:
         light_dirs: List of light directory paths
         source_dir: Source root directory
-        allow_bias: Allow shorter darks with bias frames
+        scale_darks: Allow shorter darks with bias frames
         debug: Enable debug output
         quiet: Suppress progress output
         metadata_cache: Optional pre-loaded metadata dict
@@ -230,7 +230,7 @@ def check_light_directories(
             light_metadata=light_metadata,
             search_dirs=search_dirs,
             metadata_cache=metadata_cache if metadata_cache is not None else {},
-            allow_bias=allow_bias,
+            scale_darks=scale_darks,
             debug=debug,
             quiet=quiet,
         )
@@ -429,7 +429,7 @@ def process_light_directories(
     debug: bool = False,
     dry_run: bool = False,
     quiet: bool = False,
-    allow_bias: bool = False,
+    scale_darks: bool = False,
 ) -> dict:
     """
     Move complete directory groups atomically using discrete steps:
@@ -447,7 +447,7 @@ def process_light_directories(
         debug: Enable debug output
         dry_run: Preview without moving
         quiet: Suppress progress output
-        allow_bias: Allow shorter darks with bias frames
+        scale_darks: Allow shorter darks with bias frames
 
     Returns:
         Dict with counts: moved, skipped_*, errors
@@ -528,7 +528,7 @@ def process_light_directories(
 
     # Step 3: CHECK
     status_map = check_light_directories(
-        filtered_light_dirs, source_path, allow_bias, debug, quiet, metadata_cache
+        filtered_light_dirs, source_path, scale_darks, debug, quiet, metadata_cache
     )
 
     # Step 4: ORGANIZE
@@ -643,7 +643,7 @@ def process_light_directories(
     return results
 
 
-def print_summary(results: dict, allow_bias: bool = False) -> None:
+def print_summary(results: dict, scale_darks: bool = False) -> None:
     """Print summary of processing results."""
 
     def plural(count: int, singular: str) -> str:
@@ -665,7 +665,7 @@ def print_summary(results: dict, allow_bias: bool = False) -> None:
     )
 
     # Bias, Darks, Flats order (required by tests)
-    if allow_bias:
+    if scale_darks:
         biases_needed = results["biases_needed"]
         biases_present = biases_needed - results["skipped_no_bias"]
     else:
@@ -711,9 +711,11 @@ def main() -> int:
         "--quiet", "-q", action="store_true", help="Suppress progress output"
     )
     parser.add_argument(
-        "--allow-bias",
-        action="store_true",
-        help="Allow shorter darks with bias frames",
+        "--scale-dark",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="scale dark frames using bias compensation (allows shorter exposures). "
+        "Default: exact exposure match only",
     )
     parser.add_argument(
         "--path-pattern",
@@ -757,11 +759,11 @@ def main() -> int:
         args.debug,
         args.dryrun,
         args.quiet,
-        args.allow_bias,
+        args.scale_darks,
     )
 
     if not args.quiet:
-        print_summary(results, allow_bias=args.allow_bias)
+        print_summary(results, scale_darks=args.scale_darks)
 
     return EXIT_ERROR if results["errors"] > 0 else EXIT_SUCCESS
 

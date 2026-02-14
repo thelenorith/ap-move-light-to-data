@@ -93,7 +93,7 @@ class TestCheckCalibrationForLight:
             light_metadata,
             search_dirs,
             metadata_cache={},
-            allow_bias=False,
+            scale_darks=False,
             debug=False,
             quiet=True,
         )
@@ -129,7 +129,7 @@ class TestCheckCalibrationForLight:
             light_metadata,
             search_dirs,
             metadata_cache={},
-            allow_bias=False,
+            scale_darks=False,
             debug=False,
             quiet=True,
         )

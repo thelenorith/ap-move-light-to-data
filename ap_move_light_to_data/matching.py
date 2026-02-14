@@ -88,7 +88,7 @@ def check_calibration_for_light(
     light_metadata: Dict[str, Any],
     search_dirs: List[str],
     metadata_cache: Dict[str, Dict[str, Any]],
-    allow_bias: bool,
+    scale_darks: bool,
     debug: bool,
     quiet: bool,
 ) -> Dict[str, Any]:
@@ -99,7 +99,7 @@ def check_calibration_for_light(
         light_metadata: Light frame metadata dict
         search_dirs: Directories to search for calibration (ordered by priority)
         metadata_cache: Pre-loaded metadata dict to search from
-        allow_bias: Allow shorter darks with bias frames
+        scale_darks: Allow shorter darks with bias frames
         debug: Enable debug output
         quiet: Suppress progress output
 
@@ -156,7 +156,7 @@ def check_calibration_for_light(
                 metadata_dict=dir_cache,
                 reference=light_metadata,
                 match_fields=config.DARK_MATCH_KEYWORDS,
-                allow_shorter_exposure=allow_bias,
+                allow_shorter_exposure=scale_darks,
             )
             if dir_cache
             else []
@@ -174,7 +174,7 @@ def check_calibration_for_light(
                 float(d.get(config.NORMALIZED_HEADER_EXPOSURESECONDS, -1)) == light_exp
                 for d in darks
             )
-            result["needs_bias"] = allow_bias and not exact_match
+            result["needs_bias"] = scale_darks and not exact_match
             break
 
     # Search for flats

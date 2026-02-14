@@ -62,7 +62,7 @@ class TestIntegrationCompleteScenarios:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Entire DATE1 should move as one unit
@@ -109,7 +109,7 @@ class TestIntegrationCompleteScenarios:
         )
 
         def mock_check_calibration(
-            light_metadata, search_dirs, allow_bias, debug, quiet, metadata_cache=None
+            light_metadata, search_dirs, scale_darks, debug, quiet, metadata_cache=None
         ):
             # Complete for DATE1, incomplete for DATE2
             if search_dirs[0] == light_dir1:
@@ -142,7 +142,7 @@ class TestIntegrationCompleteScenarios:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Only DATE1 should move
@@ -196,7 +196,7 @@ class TestIntegrationCompleteScenarios:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # FILTER_R should move independently
@@ -236,7 +236,7 @@ class TestIntegrationCompleteScenarios:
         )
 
         def mock_check_calibration(
-            light_metadata, search_dirs, allow_bias, debug, quiet, metadata_cache=None
+            light_metadata, search_dirs, scale_darks, debug, quiet, metadata_cache=None
         ):
             if search_dirs[0] == light_r:
                 return {
@@ -268,7 +268,7 @@ class TestIntegrationCompleteScenarios:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # DATE1 is excluded because it contains incomplete light_b
@@ -323,7 +323,7 @@ class TestIntegrationCompleteScenarios:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Only accept should be processed and moved
@@ -367,7 +367,7 @@ class TestIntegrationCompleteScenarios:
         )
 
         def mock_check_calibration(
-            light_metadata, search_dirs, allow_bias, debug, quiet, metadata_cache=None
+            light_metadata, search_dirs, scale_darks, debug, quiet, metadata_cache=None
         ):
             if search_dirs[0] == light_dir1:
                 return {
@@ -399,7 +399,7 @@ class TestIntegrationCompleteScenarios:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Both should move: DATE1 independently, entire TARGET for DATE2

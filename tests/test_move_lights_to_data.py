@@ -63,7 +63,7 @@ class TestIsTreeCompleteAndSelfContained:
         result = move_lights_to_data.is_group_complete_and_self_contained(
             group_path=str(tree),
             source_dir=str(tmp_path),
-            allow_bias=False,
+            scale_darks=False,
             debug=False,
             quiet=True,
             metadata_cache={},
@@ -108,7 +108,7 @@ class TestIsTreeCompleteAndSelfContained:
         )
 
         result = move_lights_to_data.is_group_complete_and_self_contained(
-            str(tree), str(tmp_path), allow_bias=False, debug=False, quiet=True
+            str(tree), str(tmp_path), scale_darks=False, debug=False, quiet=True
         )
 
         assert result["is_complete"] is True
@@ -144,7 +144,7 @@ class TestIsTreeCompleteAndSelfContained:
         )
 
         result = move_lights_to_data.is_group_complete_and_self_contained(
-            str(tree), str(tmp_path), allow_bias=False, debug=False, quiet=True
+            str(tree), str(tmp_path), scale_darks=False, debug=False, quiet=True
         )
 
         assert result["is_complete"] is True
@@ -177,7 +177,7 @@ class TestIsTreeCompleteAndSelfContained:
         )
 
         result = move_lights_to_data.is_group_complete_and_self_contained(
-            str(tree), str(tmp_path), allow_bias=False, debug=False, quiet=True
+            str(tree), str(tmp_path), scale_darks=False, debug=False, quiet=True
         )
 
         assert result["is_complete"] is False
@@ -532,7 +532,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 0
@@ -585,7 +585,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=True,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 1
@@ -647,7 +647,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=True,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # CRITICAL: Source files must still exist
@@ -712,7 +712,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 1
@@ -777,7 +777,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=True,
+            scale_darks=True,
         )
 
         assert result["skipped_no_darks"] == 1
@@ -850,7 +850,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 3
@@ -908,7 +908,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 1
@@ -979,7 +979,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Copy failed for one file, so deletion should be skipped entirely
@@ -1035,7 +1035,7 @@ class TestProcessLightDirectories:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 0
@@ -1095,7 +1095,7 @@ class TestOutputFormatting:
             debug=False,
             dry_run=False,
             quiet=False,  # NOT quiet
-            allow_bias=False,
+            scale_darks=False,
         )
 
         captured = capsys.readouterr()
@@ -1150,7 +1150,7 @@ class TestOutputFormatting:
             debug=False,
             dry_run=False,
             quiet=False,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         captured = capsys.readouterr()
@@ -1202,7 +1202,7 @@ class TestOutputFormatting:
             debug=False,
             dry_run=False,
             quiet=True,  # Quiet mode
-            allow_bias=False,
+            scale_darks=False,
         )
 
         captured = capsys.readouterr()
@@ -1260,7 +1260,7 @@ class TestEdgeCases:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 1
@@ -1313,7 +1313,7 @@ class TestEdgeCases:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         assert result["moved"] == 1
@@ -1374,7 +1374,7 @@ class TestCriticalEdgeCases:
 
         # This should complete without error
         result = move_lights_to_data.is_group_complete_and_self_contained(
-            str(tree), str(source), allow_bias=False, debug=False, quiet=True
+            str(tree), str(source), scale_darks=False, debug=False, quiet=True
         )
 
         # When no valid lights are found, directory is skipped
@@ -1403,7 +1403,7 @@ class TestCriticalEdgeCases:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Should return empty results
@@ -1433,7 +1433,7 @@ class TestCriticalEdgeCases:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Should return empty results after filtering
@@ -1491,7 +1491,7 @@ class TestCriticalEdgeCases:
             debug=False,
             dry_run=False,
             quiet=True,
-            allow_bias=False,
+            scale_darks=False,
         )
 
         # Should complete without error
@@ -1577,7 +1577,7 @@ class TestPrintSummary:
             "errors": 0,
         }
 
-        move_lights_to_data.print_summary(results, allow_bias=False)
+        move_lights_to_data.print_summary(results, scale_darks=False)
 
         captured = capsys.readouterr()
         assert "Summary" in captured.out
@@ -1587,7 +1587,7 @@ class TestPrintSummary:
         assert "Flats:" in captured.out
 
     def test_print_summary_with_bias(self, capsys):
-        """Prints summary with bias metrics when allow_bias=True."""
+        """Prints summary with bias metrics when scale_darks=True."""
         results = {
             "dir_count": 10,
             "target_count": 2,
@@ -1601,7 +1601,7 @@ class TestPrintSummary:
             "errors": 0,
         }
 
-        move_lights_to_data.print_summary(results, allow_bias=True)
+        move_lights_to_data.print_summary(results, scale_darks=True)
 
         captured = capsys.readouterr()
         assert "Biases: 1 of 3" in captured.out  # 3 needed - 2 missing = 1 present
@@ -1622,7 +1622,7 @@ class TestPrintSummary:
             "errors": 3,
         }
 
-        move_lights_to_data.print_summary(results, allow_bias=False)
+        move_lights_to_data.print_summary(results, scale_darks=False)
 
         captured = capsys.readouterr()
         assert "Errors: 3" in captured.out
@@ -1642,7 +1642,7 @@ class TestPrintSummary:
             "errors": 0,
         }
 
-        move_lights_to_data.print_summary(results, allow_bias=False)
+        move_lights_to_data.print_summary(results, scale_darks=False)
 
         captured = capsys.readouterr()
         assert "Darks:" in captured.out

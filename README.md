@@ -4,6 +4,7 @@
 [![Coverage](https://github.com/jewzaam/ap-move-light-to-data/workflows/Coverage%20Check/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/coverage.yml)
 [![Lint](https://github.com/jewzaam/ap-move-light-to-data/workflows/Lint/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/lint.yml)
 [![Format](https://github.com/jewzaam/ap-move-light-to-data/workflows/Format%20Check/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/format.yml)
+[![Type Check](https://github.com/jewzaam/ap-move-light-to-data/workflows/Type%20Check/badge.svg)](https://github.com/jewzaam/ap-move-light-to-data/actions/workflows/typecheck.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -55,7 +56,7 @@ python -m ap_move_light_to_data <source_dir> <dest_dir> [options]
 | `--debug`, `-d` | Enable debug output |
 | `--dryrun`, `-n` | Show what would be done without moving files |
 | `--quiet`, `-q` | Suppress progress output |
-| `--allow-bias` | Allow shorter darks with bias frames |
+| `--scale-dark` | Scale dark frames using bias compensation (allows shorter exposures). Default: exact exposure match only |
 | `--path-pattern REGEX` | Filter directories by regex pattern |
 
 ### Examples
@@ -70,8 +71,8 @@ python -m ap_move_light_to_data 10_Blink 20_Data --dryrun
 # Process only accept directories (skip rejected)
 python -m ap_move_light_to_data 10_Blink 20_Data --path-pattern ".*accept.*"
 
-# Allow shorter darks with bias frames
-python -m ap_move_light_to_data 10_Blink 20_Data --allow-bias
+# Enable bias-compensated dark scaling (allows shorter dark exposures)
+python -m ap_move_light_to_data 10_Blink 20_Data --scale-dark
 ```
 
 ## How It Works
@@ -81,9 +82,9 @@ The tool recursively evaluates directory trees and moves them atomically when:
 2. All calibration files are self-contained within the tree (not in parent directories)
 
 **Calibration matching criteria:**
-- **Darks**: Camera, set temperature, gain, offset, readout mode, exposure (unless `--allow-bias`)
+- **Darks**: Camera, set temperature, gain, offset, readout mode, exposure (unless `--scale-dark`)
 - **Flats**: Camera, set temperature, gain, offset, readout mode, filter
-- **Bias**: Only required with `--allow-bias` when dark exposure doesn't match light exposure
+- **Bias**: Only required with `--scale-dark` when dark exposure doesn't match light exposure
 
 **Recursive evaluation:**
 - Complete TARGET directory → moves entire TARGET atomically
