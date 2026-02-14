@@ -1,26 +1,21 @@
-# Generated-by: Claude Code (Claude Opus 4.5)
 name: Typecheck
 
 on:
-  pull_request:
-    branches: [ main, master ]
   push:
-    branches: [ main, master ]
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   typecheck:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-
-    - name: Install dependencies
-      run: make install-dev
-
-    - name: Run typecheck
-      run: make typecheck
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: make install-dev
+      - name: Run type checker
+        run: make typecheck
